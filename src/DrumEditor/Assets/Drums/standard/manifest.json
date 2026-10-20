@@ -1,0 +1,70 @@
+{
+  "kitId": "standard-13tracks-v4",
+  "instruments": [
+    {
+      "id": "Kick",
+      "file": "bass_drum.wav",
+      "gain": 1.0
+    },
+    {
+      "id": "Snare",
+      "file": "snare.wav",
+      "gain": 0.9
+    },
+    {
+      "id": "HiHat",
+      "file": "closed_hihat.wav",
+      "gain": 0.65
+    },
+    {
+      "id": "OpenHH",
+      "file": "open_hihat.wav",
+      "gain": 0.6
+    },
+    {
+      "id": "Clap",
+      "file": "clap.wav",
+      "gain": 0.6
+    },
+    {
+      "id": "Perc",
+      "file": "claves.wav",
+      "gain": 0.8
+    },
+    {
+      "id": "LowTom",
+      "file": "lowtom.wav",
+      "gain": 0.65
+    },
+    {
+      "id": "LowMiddleTom",
+      "file": "lowmiddletom.wav",
+      "gain": 0.65
+    },
+    {
+      "id": "HighMiddleTom",
+      "file": "highmiddletom.wav",
+      "gain": 0.65
+    },
+    {
+      "id": "HighTom",
+      "file": "hightom.wav",
+      "gain": 0.65
+    },
+    {
+      "id": "FloorTom",
+      "file": "floor_tom.wav",
+      "gain": 0.8
+    },
+    {
+      "id": "Crash",
+      "file": "crash.wav",
+      "gain": 0.65
+    },
+    {
+      "id": "Ride",
+      "file": "ride.wav",
+      "gain": 0.7
+    }
+  ]
+}

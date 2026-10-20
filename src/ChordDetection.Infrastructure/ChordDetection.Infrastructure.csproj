@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>ChordDetection.Infrastructure</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- NAudio.Core: WAV read/write (cross-platform). NAudio.WinMM: WaveInEvent recording (Windows).
+         NAudio.Wasapi: MediaFoundationReader for MP3 / M4A etc. (Windows). -->
+    <PackageReference Include="NAudio.Core" Version="2.2.1" />
+    <PackageReference Include="NAudio.WinMM" Version="2.2.1" />
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.19.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ChordDetection.Core\ChordDetection.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Basic Pitch ICASSP 2022 model (Apache-2.0, Spotify). Copied next to the executable. -->
+    <None Update="Models\nmp.onnx" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Models\LICENSE-basic-pitch.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Models\NOTICE-basic-pitch.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Demucs htdemucs_6s (MIT, Meta) exported by tools/demucs_onnx.py. Not in git (115 MB); copied when present. -->
+    <None Update="Models\htdemucs_6s.onnx" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Models\htdemucs_6s.onnx')" />
+    <None Update="Models\LICENSE-demucs.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ChordDetection.Infrastructure.Tests" />
+  </ItemGroup>
+
+</Project>

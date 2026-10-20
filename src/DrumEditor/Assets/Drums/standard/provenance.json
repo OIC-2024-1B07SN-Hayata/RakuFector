@@ -1,0 +1,157 @@
+{
+  "importedOn": "2026-10-06",
+  "sources": [
+    {
+      "instrument": "Kick",
+      "file": "bass_drum.wav",
+      "sourceUrl": "https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/2f3e05c70ab4d73ad053a1467adec89bd27377a0/bd/10_bd_switchangel.wav",
+      "sourceSha256": "394b81ccb31433bd1271e885d72a96ba7cc6cfa60a07b4358f9834b7adf4d455",
+      "outputSha256": "6755753fdcfa19baacee4023157fb2ded850178baf3f3ed67c6f066d119149e0",
+      "license": "Unlicense",
+      "sourceFormat": "48000Hz/24bit/2ch",
+      "durationSeconds": 0.2602
+    },
+    {
+      "instrument": "Snare",
+      "file": "snare.wav",
+      "sourceUrl": "https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/2f3e05c70ab4d73ad053a1467adec89bd27377a0/sd/10_sd_switchangel-bounce-2.wav",
+      "sourceSha256": "b9c21ec993f25742cc0ef4961ae54aaea27f6391ca93f70133218e1fb178e7db",
+      "outputSha256": "8c97003363d6cf0881297b3e71d781d167312596679187daa18a9c03ef810f73",
+      "license": "Unlicense",
+      "sourceFormat": "48000Hz/24bit/2ch",
+      "durationSeconds": 0.3607
+    },
+    {
+      "instrument": "HiHat",
+      "file": "closed_hihat.wav",
+      "sourceUrl": "https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/2f3e05c70ab4d73ad053a1467adec89bd27377a0/hh/10_hh_switchangel.wav",
+      "sourceSha256": "3a6dcb613a4a9955c03ea3270c50c1909acc12ac56a0a355394bafa81a391920",
+      "outputSha256": "736103a912e70b95888c87918435706f31b866bf928c9a10e5cd95c51a08c4e9",
+      "license": "Unlicense",
+      "sourceFormat": "44100Hz/16bit/1ch",
+      "durationSeconds": 0.3018
+    },
+    {
+      "instrument": "OpenHH",
+      "file": "open_hihat.wav",
+      "author": "CM Music",
+      "sourcePage": "https://ccmixter.org/files/carbonmonoxidemusic/23425",
+      "sourceUrl": "https://ccmixter.org/content/CarbonMonoxideMusic/CarbonMonoxideMusic_-_Drum_Kit_Samples.zip",
+      "sourceArchiveMember": "Sample Drum Kit/Open Hat 2.wav",
+      "sourceArchiveSha256": "80a37d6f3ed109a6c2d7b4dc40665604c6b0d7e7e28c6198d66739da8184c728",
+      "sourceSha256": "6ba547a10fad2631b5db1cf466097eafb03467812f38fe2f94aeea31bfa78457",
+      "outputSha256": "2c5d5dc03ea27a28fd8303bc0e4bc3803b6acd652a67d8b4f2689c58f837af3d",
+      "license": "CC0-1.0",
+      "sourceFormat": "44100Hz/16bit/2ch",
+      "durationSeconds": 3.7616,
+      "processing": "mono PCM16/44.1kHz; silence trim; 2ms edge fades; peak 0.65"
+    },
+    {
+      "instrument": "Clap",
+      "author": "Versilian Studios / VCSL",
+      "sourcePage": "https://github.com/sgossner/VCSL",
+      "sourceUrl": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Idiophones/Struck%20Idiophones/Claps/Clap_rr1.wav",
+      "sourceSha256": "4c9f3fe4a34733b9be6ed9ce5e5aad48b19c1029ae9c6dd1b96294a847539e3f",
+      "outputSha256": "5f6afb52411a05b1befe2657fef59668ce536c7e80b8ca0e89a001e5952be512",
+      "license": "CC0-1.0",
+      "processing": "Clap_rr1 recorded handclap replacing SoloClap_vl3; mono PCM16/44.1kHz; silence trim; 2ms edge fades; peak 0.65"
+    },
+    {
+      "instrument": "Perc",
+      "file": "claves.wav",
+      "sourceUrl": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/440300901dfe9275fd84e0b7763af1f8443ae62e/VSCO%201%20Percussion/varWood/claves_mf.wav",
+      "sourceSha256": "7906ca75132d3374a00d12c23b030807107e4576716b6a437a9a6a8c7824b291",
+      "outputSha256": "603fa7f2c634d93b7da806e0140914fa040900a0dbadedfbb7a804f267022c6d",
+      "license": "CC0-1.0",
+      "sourceFormat": "44100Hz/24bit/2ch",
+      "durationSeconds": 0.3955
+    },
+    {
+      "instrument": "LowTom",
+      "author": "Versilian Studios / Karoryfer Samples; Austin McMahon",
+      "sourcePage": "https://versilian-studios.com/virtuosity-drums/",
+      "sourceUrl": "https://static.crates.io/crates/ferrosintesis-samples-drumkit/ferrosintesis-samples-drumkit-0.1.0.crate",
+      "sourceArchiveMember": "ferrosintesis-samples-drumkit-0.1.0/samples/tomlo_vl3_rr1.wav",
+      "sourceArchiveSha256": "006e4f965a1a6d99b2952769ccd3ffdfc89a5ac5f700fdd84e7bf292c850080a",
+      "sourceSha256": "26a3bf5ab35d3fc0dffd1451de8d43e90fe4029a5cf6ca50d596ae8d24db3a15",
+      "outputSha256": "823340adb13ca7e435f1aec9d5b4baea5f00931b49aeef135b4a9d4e8090047d",
+      "license": "CC0-1.0",
+      "pitchShiftSemitones": 4,
+      "processing": "recorded tom; bandlimited 64-tap sinc repitch; mono PCM16/44.1kHz; edge fades 2ms; peak 0.60"
+    },
+    {
+      "instrument": "LowMiddleTom",
+      "author": "Versilian Studios / Karoryfer Samples; Austin McMahon",
+      "sourcePage": "https://versilian-studios.com/virtuosity-drums/",
+      "sourceUrl": "https://static.crates.io/crates/ferrosintesis-samples-drumkit/ferrosintesis-samples-drumkit-0.1.0.crate",
+      "sourceArchiveMember": "ferrosintesis-samples-drumkit-0.1.0/samples/tomlo_vl3_rr1.wav",
+      "sourceArchiveSha256": "006e4f965a1a6d99b2952769ccd3ffdfc89a5ac5f700fdd84e7bf292c850080a",
+      "sourceSha256": "26a3bf5ab35d3fc0dffd1451de8d43e90fe4029a5cf6ca50d596ae8d24db3a15",
+      "outputSha256": "272f7eba3c01b3d3df61949ca6b0483b301014e03afdca3ea59c83e2b7f272ae",
+      "license": "CC0-1.0",
+      "pitchShiftSemitones": 6,
+      "processing": "recorded tom; bandlimited 64-tap sinc repitch; mono PCM16/44.1kHz; edge fades 2ms; peak 0.60"
+    },
+    {
+      "instrument": "HighMiddleTom",
+      "author": "Versilian Studios / Karoryfer Samples; Austin McMahon",
+      "sourcePage": "https://versilian-studios.com/virtuosity-drums/",
+      "sourceUrl": "https://static.crates.io/crates/ferrosintesis-samples-drumkit/ferrosintesis-samples-drumkit-0.1.0.crate",
+      "sourceArchiveMember": "ferrosintesis-samples-drumkit-0.1.0/samples/tomhi_vl3_rr1.wav",
+      "sourceArchiveSha256": "006e4f965a1a6d99b2952769ccd3ffdfc89a5ac5f700fdd84e7bf292c850080a",
+      "sourceSha256": "0e0fc6f1531f2138df26e211b5c6d69e7e303984191077236f6c134c85e3f9c5",
+      "outputSha256": "68217066f3b505bcd139375802a81cf828f73f1533ff95da3cf3708948d13302",
+      "license": "CC0-1.0",
+      "pitchShiftSemitones": 0,
+      "processing": "recorded tom; bandlimited 64-tap sinc repitch; mono PCM16/44.1kHz; edge fades 2ms; peak 0.60"
+    },
+    {
+      "instrument": "HighTom",
+      "author": "Versilian Studios / Karoryfer Samples; Austin McMahon",
+      "sourcePage": "https://versilian-studios.com/virtuosity-drums/",
+      "sourceUrl": "https://static.crates.io/crates/ferrosintesis-samples-drumkit/ferrosintesis-samples-drumkit-0.1.0.crate",
+      "sourceArchiveMember": "ferrosintesis-samples-drumkit-0.1.0/samples/tomhi_vl3_rr1.wav",
+      "sourceArchiveSha256": "006e4f965a1a6d99b2952769ccd3ffdfc89a5ac5f700fdd84e7bf292c850080a",
+      "sourceSha256": "0e0fc6f1531f2138df26e211b5c6d69e7e303984191077236f6c134c85e3f9c5",
+      "outputSha256": "b51c67382bd98948516840e2c6c4d576691115412cc23b97244b0ca9f8b06eec",
+      "license": "CC0-1.0",
+      "pitchShiftSemitones": 2,
+      "processing": "recorded tom; bandlimited 64-tap sinc repitch; mono PCM16/44.1kHz; edge fades 2ms; peak 0.60"
+    },
+    {
+      "instrument": "FloorTom",
+      "file": "floor_tom.wav",
+      "author": "Versilian Studios / Karoryfer Samples; performance Austin McMahon",
+      "sourcePage": "https://versilian-studios.com/virtuosity-drums/",
+      "sourceUrl": "https://static.crates.io/crates/ferrosintesis-samples-drumkit/ferrosintesis-samples-drumkit-0.1.0.crate",
+      "sourceArchiveMember": "ferrosintesis-samples-drumkit-0.1.0/samples/tomlo_vl3_rr1.wav",
+      "sourceArchiveSha256": "006e4f965a1a6d99b2952769ccd3ffdfc89a5ac5f700fdd84e7bf292c850080a",
+      "sourceSha256": "26a3bf5ab35d3fc0dffd1451de8d43e90fe4029a5cf6ca50d596ae8d24db3a15",
+      "outputSha256": "b76d8f5d5995c3f8844915ca788c1e31706c1562e9b127ee771c1e00ead27f3f",
+      "license": "CC0-1.0",
+      "sourceFormat": "44100Hz/16bit/1ch",
+      "durationSeconds": 0.771,
+      "processing": "ferrosintesis PCM preparation of Virtuosity mid microphone, pinned original revision 9f04cf9a734527edfbb0a4eee1f674e45bbf71bc; mono PCM16/44.1kHz; silence trim; 2ms edge fades; peak 0.65"
+    },
+    {
+      "instrument": "Crash",
+      "file": "crash.wav",
+      "sourceUrl": "https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/2f3e05c70ab4d73ad053a1467adec89bd27377a0/cr/10_cr_switchangel.wav",
+      "sourceSha256": "12ac9540212c0570067ce6e63e7a4332223f4aaabb5b2d759ff3074c0361fc39",
+      "outputSha256": "e48ac6da7ff56be6385a168c28d64e6758da309926e2a86e646bd89267d8272c",
+      "license": "Unlicense",
+      "sourceFormat": "44100Hz/16bit/1ch",
+      "durationSeconds": 0.8537
+    },
+    {
+      "instrument": "Ride",
+      "file": "ride.wav",
+      "sourceUrl": "https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/2f3e05c70ab4d73ad053a1467adec89bd27377a0/rd/10_rd_switchangel.wav",
+      "sourceSha256": "88edbf3d85659aed5a54c0863c50b76f0f5b2a38df201589a7412becaedd78a1",
+      "outputSha256": "21ac08860b6ba2f739874c31208ac4043d9a10855efba88fff3bb69d33186dcc",
+      "license": "Unlicense",
+      "sourceFormat": "44100Hz/16bit/1ch",
+      "durationSeconds": 0.8948
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!-- Show the drum WPF view and its editable partial classes together in Visual Studio. -->
+  <ItemGroup>
+    <Compile Update="Views\DrumEditorView.xaml.cs"><DependentUpon>DrumEditorView.xaml</DependentUpon></Compile>
+    <Compile Update="Views\DrumEditorView.Editing.cs"><DependentUpon>DrumEditorView.xaml</DependentUpon></Compile>
+    <Compile Update="Views\DrumEditorView.Polish.cs"><DependentUpon>DrumEditorView.xaml</DependentUpon></Compile>
+    <Compile Update="Views\DrumEditorView.Trackpad.cs"><DependentUpon>DrumEditorView.xaml</DependentUpon></Compile>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>楽フェクター</AssemblyName>
+    <RootNamespace>FXForge</RootNamespace>
+    <Product>楽フェクター</Product>
+    <Title>楽フェクター</Title>
+    <UseWPF>true</UseWPF>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../CommonAudio/CommonAudio.csproj" />
+    <ProjectReference Include="../DrumEditor/DrumEditor.csproj" />
+    <ProjectReference Include="../ChordDetection.Core/ChordDetection.Core.csproj" />
+    <ProjectReference Include="../ChordDetection.Infrastructure/ChordDetection.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+  </ItemGroup>
+  <!-- Visual Studio Solution Explorer: keep editable code-behind nested under each XAML page. -->
+  <ItemGroup>
+    <Compile Update="App.xaml.cs"><DependentUpon>App.xaml</DependentUpon></Compile>
+    <Compile Update="MainWindow.xaml.cs"><DependentUpon>MainWindow.xaml</DependentUpon></Compile>
+    <Compile Update="Views\TonePage.xaml.cs"><DependentUpon>TonePage.xaml</DependentUpon></Compile>
+    <Compile Update="Views\TunerPage.xaml.cs"><DependentUpon>TunerPage.xaml</DependentUpon></Compile>
+    <Compile Update="Views\ChordPage.xaml.cs"><DependentUpon>ChordPage.xaml</DependentUpon></Compile>
+    <Compile Update="Views\FootswitchPage.xaml.cs"><DependentUpon>FootswitchPage.xaml</DependentUpon></Compile>
+  </ItemGroup>
+</Project>

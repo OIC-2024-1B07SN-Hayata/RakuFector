@@ -1,0 +1,11 @@
+5 missing project.assets.json errors: steps to fix on Windows
+
+1. Extract the entire ZIP to a regular local folder.
+2. Close Visual Studio.
+3. Double-click REPAIR_AND_BUILD.cmd.
+4. Wait for SUCCESS; it regenerates assets for all five projects.
+5. Open 楽フェクター.sln in Visual Studio 2022 (Debug / x64).
+6. Set 楽フェクター as Startup Project and run.
+
+Required: .NET 8 SDK, VS 2022 .NET desktop development, internet for first NuGet restore.
+If it fails, send restore_and_build_log.txt. The source changes alone cannot install NuGet packages on your PC.

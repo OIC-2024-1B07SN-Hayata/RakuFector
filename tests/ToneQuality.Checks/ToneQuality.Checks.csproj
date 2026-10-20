@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+  <ItemGroup><Compile Include="../../src/楽フェクター/AudioEffects/*.cs" Link="AudioEffects/%(Filename).cs" /></ItemGroup>
+  <ItemGroup><None Update="Fixtures/*.f32" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+</Project>
