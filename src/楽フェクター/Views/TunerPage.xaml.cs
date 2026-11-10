@@ -9,13 +9,24 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using FXForge.Desktop.Views;
 
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+
 namespace FXForge.Views;
 
 // The original FFT/HPS tuner is retained in TunerAnalyzer.cs.
+
 // Only the buffer dispatch is changed: FFT must not block the low-latency ASIO callback.
 public partial class TunerPage : UserControl, IDisposable
 {
     private readonly TunerAnalyzer _tuner = new();
+    // 6弦同時解析
+    private readonly PolyphonicTunerAnalyzer _polyTuner = new();
+    private readonly ObservableCollection<StringMeterRow> _stringMeters = new();
+
+    // 起動時はOFF
+    private volatile bool _polyEnabled;
     private readonly Channel<AudioChunk> _queue = Channel.CreateBounded<AudioChunk>(
         new BoundedChannelOptions(64)
         {
@@ -35,6 +46,17 @@ public partial class TunerPage : UserControl, IDisposable
     public TunerPage()
     {
         InitializeComponent();
+
+        // 6弦チューナー
+        string[] notes = { "E2", "A2", "D3", "G3", "B3", "E4" };
+
+        for (int i = 0; i < notes.Length; i++)
+            _stringMeters.Add(new StringMeterRow(6 - i, notes[i]));
+
+        StringMeterList.ItemsSource = _stringMeters;
+        _polyTuner.ResultsReady += OnPolyResultsReady;
+        //
+
         Loaded += (_, _) => { _listening = true; _silenceTimer.Start(); Draw(); };
         Unloaded += (_, _) => { _listening = false; _silenceTimer.Stop(); };
         _silenceTimer.Tick += (_, _) =>
@@ -43,6 +65,40 @@ public partial class TunerPage : UserControl, IDisposable
                 UpdateTuner(new TunerResult { hasSignal = false });
         };
         _ = Task.Run(AnalyzeInBackground);
+    }
+
+    private void PolyTunerToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _polyEnabled = PolyTunerToggle.IsChecked == true;
+        PolyTunerToggle.Content = _polyEnabled ? "ON" : "OFF";
+
+        if (!_polyEnabled)
+        {
+            foreach (var row in _stringMeters)
+                row.Apply(new StringTuningResult());
+        }
+    }
+
+    private void OnPolyResultsReady(StringTuningResult[] results)
+    {
+        if (Dispatcher.HasShutdownStarted ||
+            Dispatcher.HasShutdownFinished)
+            return;
+
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.BeginInvoke(
+                new Action(() => OnPolyResultsReady(results)),
+                DispatcherPriority.Background);
+            return;
+        }
+
+        // OFF中・画面非表示中・終了後の結果は表示しない
+        if (_disposed || !_listening || !_polyEnabled)
+            return;
+
+        for (int i = 0; i < Math.Min(_stringMeters.Count, results.Length); i++)
+            _stringMeters[i].Apply(results[i]);
     }
 
     // Samples are reused by CommonAudioInput after the callback ends. Copy once, enqueue,
@@ -59,6 +115,10 @@ public partial class TunerPage : UserControl, IDisposable
         {
             await foreach (var chunk in _queue.Reader.ReadAllAsync(_stopping.Token))
             {
+                // 画面が表示中で、6弦解析がONの場合のみ音声を渡す
+                if (!_disposed && _listening && _polyEnabled)
+                    _polyTuner.AddSamples(chunk.Samples, chunk.SampleRate);
+
                 var result = _tuner.AddSamples(chunk.Samples, chunk.SampleRate, chunk.Channel);
                 if (result is not { hasSignal: true } || _disposed) continue;
                 Interlocked.Exchange(ref _lastSignalTimestamp, Environment.TickCount64);
@@ -154,10 +214,83 @@ public partial class TunerPage : UserControl, IDisposable
     public void Dispose()
     {
         if (_disposed) return;
+
         _disposed = true;
         _listening = false;
+        _polyEnabled = false;
+
+        _polyTuner.ResultsReady -= OnPolyResultsReady;
+
         _silenceTimer.Stop();
         _stopping.Cancel();
         _queue.Writer.TryComplete();
     }
 }
+/// <summary>6行分のUI表示用データ。ItemsControlが自動で更新される。</summary>
+public sealed class StringMeterRow : INotifyPropertyChanged
+{
+    private static readonly Brush Green = new SolidColorBrush(Color.FromRgb(50, 211, 160));
+    private static readonly Brush Blue = new SolidColorBrush(Color.FromRgb(40, 184, 255));
+    private static readonly Brush Gray = new SolidColorBrush(Color.FromRgb(130, 153, 171));
+    private readonly string _targetNote;
+
+    public string StringLabel { get; }
+    public string SoundText { get; private set; } = "未検出";
+    public string CentText { get; private set; } = "—";
+    public double MarkerLeft { get; private set; } = 116; // 0centに相当
+    public Visibility MarkerVisibility { get; private set; } = Visibility.Collapsed;
+    public Brush Accent { get; private set; } = Gray;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public StringMeterRow(int number, string targetNote)
+    {
+        StringLabel = $"{number}弦";
+        _targetNote = targetNote;
+        SoundText = targetNote + " 未検出";
+    }/// <summary>
+    /// //////////////////////////
+    /// </summary>
+    /// <param name="result"></param>
+
+    public void Apply(StringTuningResult result)
+    {
+        if (!result.IsDetected)
+        {
+            SoundText = _targetNote + " 未検出";
+            CentText = "—";
+            MarkerVisibility = Visibility.Collapsed;
+            Accent = Gray;
+        }
+        else
+        {
+            double freq = result.Frequency!.Value;
+            double cent = result.Cents!.Value;
+            string detectedNote = NoteFromFrequency(freq);
+            SoundText = $"{detectedNote} {freq:0.0}Hz";
+            CentText = $"{cent:+0.0;-0.0;0.0}¢";
+            // 240pxのCanvas上に8pxの針を移動。-50=左、0=中央、+50=右。
+            MarkerLeft = 116 + Math.Clamp(cent, -50.0, 50.0) * 2.32;
+            MarkerVisibility = Visibility.Visible;
+            Accent = Math.Abs(cent) <= 5.0 ? Green : Blue;
+        }
+        Changed(nameof(SoundText));
+        Changed(nameof(CentText));
+        Changed(nameof(MarkerLeft));
+        Changed(nameof(MarkerVisibility));
+        Changed(nameof(Accent));
+    }
+
+    private static string NoteFromFrequency(double hz)
+    {
+        if (hz <= 0 || !double.IsFinite(hz)) return "—";
+        string[] noteNames = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        int midi = (int)Math.Round(69 + 12 * Math.Log2(hz / 440.0));
+        int noteIndex = (midi % 12 + 12) % 12;
+        return noteNames[noteIndex] + (midi / 12 - 1);
+    }
+
+    private void Changed([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+

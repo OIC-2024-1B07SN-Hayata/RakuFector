@@ -306,6 +306,26 @@
                 <!-- Timeline -->
                 <Border Grid.Column="2" Style="{StaticResource Card}" ClipToBounds="True" VerticalAlignment="Top">
                     <DockPanel>
+                        <!-- Header: title and the key of the whole performance (shown once the analysis has finished). -->
+                        <Grid DockPanel.Dock="Top" Height="48" Margin="20,12,20,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="" Style="{StaticResource Icon}" FontSize="20" Margin="0,0,10,0" Foreground="{DynamicResource TextSecondary}"/>
+                                <TextBlock Text="コード進行" Style="{StaticResource CardTitle}"/>
+                            </StackPanel>
+                            <Border HorizontalAlignment="Right" VerticalAlignment="Center" Height="44" CornerRadius="6" ClipToBounds="True"
+                                    Background="{DynamicResource KeyBadgeBackground}" BorderBrush="{DynamicResource KeyBadgeBorder}" BorderThickness="1"
+                                    Visibility="{Binding IsKeyVisible, Converter={StaticResource BoolToVisibility}}">
+                                <DockPanel>
+                                    <Rectangle DockPanel.Dock="Left" Width="4" Fill="{DynamicResource Playhead}"/>
+                                    <StackPanel Orientation="Horizontal" Margin="14,0,16,0" VerticalAlignment="Center">
+                                        <TextBlock Text="KEY" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource KeyBadgeLabel}" VerticalAlignment="Center" Margin="0,2,10,0"/>
+                                        <TextBlock Text="{Binding KeyName}" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding KeyDetail}" FontSize="13" Foreground="{DynamicResource KeyBadgeLabel}" VerticalAlignment="Center" Margin="14,3,0,0"/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </Grid>
+
                         <!-- Status / result (the blank area under the scroll bar in the design). -->
                         <StackPanel DockPanel.Dock="Bottom" Margin="20,10,20,14">
                             <ProgressBar Height="4" Minimum="0" Maximum="1" Value="{Binding AnalysisProgress, Mode=OneWay}" Foreground="{DynamicResource Playhead}" Background="{DynamicResource MeterOff}" BorderThickness="0" Visibility="{Binding IsAnalyzing, Converter={StaticResource BoolToVisibility}}"/>
@@ -401,7 +421,7 @@
                 </Border>
 
                 <!-- Hint in the middle of the empty timeline (outside the ScrollViewer so it stays centred). -->
-                <TextBlock Grid.Column="2" Text="{Binding PlaceholderText}" FontSize="18" IsHitTestVisible="False" Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,286,0,0"/>
+                <TextBlock Grid.Column="2" Text="{Binding PlaceholderText}" FontSize="18" IsHitTestVisible="False" Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,346,0,0"/>
             </Grid>
         </DockPanel>
 </UserControl>

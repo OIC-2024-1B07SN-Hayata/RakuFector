@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using ChordDetection.App.Services;
 using ChordDetection.Core;
 using ChordDetection.Core.Chords;
+using ChordDetection.Core.Keys;
 using ChordDetection.Core.Models;
 using ChordDetection.Infrastructure.Audio;
 using ChordDetection.Infrastructure.Chroma;
@@ -33,6 +34,9 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     private readonly AudioPreprocessor _preprocessor;
     private readonly ChordRecorder _recorder;
     private readonly ChordSimplifier _simplifier;
+    private readonly KeyEstimator _keyEstimator = new();
+    private KeyResult? _key;
+    private bool _keyDecided; // true once the whole performance is analysed (also when no key was found)
     private readonly IFileDialogService _dialogs;
     private readonly ISourceSeparator? _separator;
     private readonly AudioPlayer _player;
@@ -152,6 +156,15 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
 
     /// <summary>Text in the middle of the empty timeline; empty once chords are shown.</summary>
     [ObservableProperty] private string _placeholderText = "";
+
+    /// <summary>True once the analysis has finished; the key badge is hidden for intermediate results.</summary>
+    [ObservableProperty] private bool _isKeyVisible;
+
+    /// <summary>Key in the badge, e.g. "Am"; "≈ Am" when major / minor was estimated; "—" when undecided.</summary>
+    [ObservableProperty] private string _keyName = "";
+
+    /// <summary>Second part of the badge, e.g. "A マイナー ・ 平行調 C".</summary>
+    [ObservableProperty] private string _keyDetail = "";
 
     public string RecordButtonText => IsRecording ? "■  停止して解析" : "●  録音開始";
 
@@ -482,6 +495,8 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
 
             finished = true;
             _analysis = analysis;
+            _key = _keyEstimator.Estimate(analysis); // only the final result decides the key
+            _keyDecided = true;
             RefreshDisplay();                                               // stage 7
             StatusText = $"解析完了（{(chroma ? "クロマ方式, " : "")}{clock.Elapsed.TotalSeconds:0.0} 秒） {stemPath ?? path}";
         }
@@ -602,6 +617,9 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
 
         if (_analysis is null)
         {
+            _key = null;
+            _keyDecided = false;
+            UpdateKeyBadge();
             UpdatePlaceholder();
             return;
         }
@@ -609,9 +627,26 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         // N.C. (no chord) is not shown; in the timeline its time is left empty.
         foreach (var chord in _simplifier.SimplifyTimeline(_analysis.Chords, ShownLevel, alsoShown: AlsoShownTypes).Where(c => !c.Chord.IsNoChord))
             Chords.Add(new ChordRowViewModel(chord, NotesIn(chord)));
+        UpdateKeyBadge();
 
         UpdatePlaceholder();
         SummaryText = $"{_analysis.DurationSeconds:0.0} 秒 / 検出した音 {_analysis.Notes.Count} 個 / コード {Chords.Count} 個";
+    }
+
+    /// <summary>Shows the key once the whole performance is analysed; intermediate results show none.</summary>
+    private void UpdateKeyBadge()
+    {
+        IsKeyVisible = _keyDecided;
+        if (_key is null)
+        {
+            KeyName = "—";
+            KeyDetail = "キーを判定できませんでした";
+            return;
+        }
+
+        bool estimated = _key.ModeFromProfile;
+        KeyName = (estimated ? "≈ " : "") + _key.Name;
+        KeyDetail = $"{_key.JapaneseName}{(estimated ? "（推定）" : "")} ・ 平行調 {_key.RelativeName}";
     }
 
     private string NotesIn(DisplayedChord shown) =>
