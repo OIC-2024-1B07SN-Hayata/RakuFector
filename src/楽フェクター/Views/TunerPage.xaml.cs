@@ -248,7 +248,10 @@ public sealed class StringMeterRow : INotifyPropertyChanged
         StringLabel = $"{number}弦";
         _targetNote = targetNote;
         SoundText = targetNote + " 未検出";
-    }
+    }/// <summary>
+    /// //////////////////////////
+    /// </summary>
+    /// <param name="result"></param>
 
     public void Apply(StringTuningResult result)
     {
