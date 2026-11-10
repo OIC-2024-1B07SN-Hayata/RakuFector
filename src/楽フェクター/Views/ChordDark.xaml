@@ -20,4 +20,8 @@
     <SolidColorBrush x:Key="RecordHover" Color="#E03A08" />
     <SolidColorBrush x:Key="SwitchOn" Color="#4CAF2A" />
     <SolidColorBrush x:Key="Playhead" Color="#4FC3F7" />
+    <!-- Key badge: a deep tint of the playhead blue so it stands out from the grey cards. -->
+    <SolidColorBrush x:Key="KeyBadgeBackground" Color="#123A4D" />
+    <SolidColorBrush x:Key="KeyBadgeBorder" Color="#2E7FA6" />
+    <SolidColorBrush x:Key="KeyBadgeLabel" Color="#A6DDF5" />
 </ResourceDictionary>

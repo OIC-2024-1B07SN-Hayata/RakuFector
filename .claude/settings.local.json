@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"/mnt/c/Program Files/dotnet/dotnet.exe\" build \"src/楽フェクター/楽フェクター.csproj\" -c Debug -p:Platform=x64 -v q -nologo)"
+    ]
+  }
+}
