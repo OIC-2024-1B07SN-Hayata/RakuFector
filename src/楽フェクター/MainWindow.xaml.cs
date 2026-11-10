@@ -163,47 +163,114 @@ public partial class MainWindow : Window
     // ComboBoxes and text inputs continue to receive their normal keystrokes.
     private void HandleFootswitchKeys(object sender, KeyEventArgs e)
     {
-        if (ReferenceEquals(MainContent.Content, _foot) && _foot.TryHandleKey(e))
+        if (_foot.TryHandleKey(e))
             e.Handled = true;
     }
 
     private FootswitchActionResult ExecuteFootswitchAction(string action, int presetNumber)
     {
-        if (action is "Distortion ON/OFF" or "Drive B ON/OFF" or "AMP ON/OFF")
+        if (action == "SD-1 ON/OFF")
         {
-            string slot = action switch
+            var driveA = _tone.Effects.FirstOrDefault(
+                effect => effect.SlotName == "DRIVE A");
+
+            if (driveA == null)
+                return new FootswitchActionResult("SD-1: Not available");
+
+            var sd1 = driveA.AvailablePresets.FirstOrDefault(
+                preset => preset.ShortName == "SD-1");
+
+            if (sd1 == null)
+                return new FootswitchActionResult("SD-1 preset not found");
+
+            if (driveA.SelectedPreset != sd1)
             {
-                "Distortion ON/OFF" => "DRIVE A",
-                "Drive B ON/OFF" => "DRIVE B",
-                _ => "AMP"
-            };
-            if (_tone.ToggleFootswitchEffect(slot, out bool enabled))
-                return new FootswitchActionResult($"{slot} {(enabled ? "ON" : "OFF")}", enabled);
-            return new FootswitchActionResult($"{slot}: 利用できません");
+                driveA.SelectedPreset = sd1;
+                driveA.IsEnabled = true;
+            }
+            else
+            {
+                driveA.IsEnabled = !driveA.IsEnabled;
+            }
+
+            return new FootswitchActionResult(
+                $"SD-1 {(driveA.IsEnabled ? "ON" : "OFF")}",
+                driveA.IsEnabled);
         }
 
-        int next = action switch
+        if (action == "RAT ON/OFF")
         {
-            "Next Preset" => presetNumber % 5 + 1,
-            "Previous Preset" => (presetNumber + 3) % 5 + 1,
-            "Preset 1" => 1, "Preset 2" => 2, "Preset 3" => 3,
-            "Preset 4" => 4, "Preset 5" => 5,
-            _ => 0
-        };
-        if (next > 0)
-        {
-            if (!_tone.ApplyFootswitchPreset(next))
-                return new FootswitchActionResult("音色切替に失敗しました");
-            return new FootswitchActionResult($"PRESET {next} SELECTED", true, next);
+            var driveB = _tone.Effects.FirstOrDefault(
+                effect => effect.SlotName == "DRIVE B");
+
+            if (driveB == null)
+                return new FootswitchActionResult("RAT: Not available");
+
+            var rat = driveB.AvailablePresets.FirstOrDefault(
+                preset => preset.ShortName == "RAT");
+
+            if (rat == null)
+                return new FootswitchActionResult("RAT preset not found");
+
+            if (driveB.SelectedPreset != rat)
+            {
+                driveB.SelectedPreset = rat;
+                driveB.IsEnabled = true;
+            }
+            else
+            {
+                driveB.IsEnabled = !driveB.IsEnabled;
+            }
+
+            return new FootswitchActionResult(
+                $"RAT {(driveB.IsEnabled ? "ON" : "OFF")}",
+                driveB.IsEnabled);
+
         }
-        if (action == "Tuner")
-        {
-            ShowPage("Tuner");
-            return new FootswitchActionResult("TUNER OPENED", true);
-        }
-        if (action is "Delay ON/OFF" or "Reverb ON/OFF" or "Chorus ON/OFF")
-            return new FootswitchActionResult($"{action.Replace(" ON/OFF", "")}: 未実装（音は変わりません）");
-        return new FootswitchActionResult("UNASSIGNED");
+
+
+            if (action is "Distortion ON/OFF" or "Drive B ON/OFF" or "AMP ON/OFF")
+            {
+                string slot = action switch
+                {
+                    "Distortion ON/OFF" => "DRIVE A",
+                    "Drive B ON/OFF" => "DRIVE B",
+                    _ => "AMP"
+                };
+                if (_tone.ToggleFootswitchEffect(slot, out bool enabled))
+                    return new FootswitchActionResult($"{slot} {(enabled ? "ON" : "OFF")}", enabled);
+                return new FootswitchActionResult($"{slot}: 利用できません");
+            }
+
+            int next = action switch
+            {
+                "Next Preset" => presetNumber % 5 + 1,
+                "Previous Preset" => (presetNumber + 3) % 5 + 1,
+                "Preset 1" => 1,
+                "Preset 2" => 2,
+                "Preset 3" => 3,
+                "Preset 4" => 4,
+                "Preset 5" => 5,
+                _ => 0
+            };
+            if (next > 0)
+            {
+                if (!_tone.ApplyFootswitchPreset(next))
+                    return new FootswitchActionResult("音色切替に失敗しました");
+                return new FootswitchActionResult($"PRESET {next} SELECTED", true, next);
+            }
+            if (action == "Tuner")
+            {
+                ShowPage("Tuner");
+                return new FootswitchActionResult("TUNER OPENED", true);
+            }
+            if (action is "Delay ON/OFF" or "Reverb ON/OFF" or "Chorus ON/OFF")
+                return new FootswitchActionResult($"{action.Replace(" ON/OFF", "")}: 未実装（音は変わりません）");
+
+            return new FootswitchActionResult("UNASSIGNED");
+
+
+        
     }
 
     private void ToneNav_Click(object sender, RoutedEventArgs e) => ShowPage("Tone");
