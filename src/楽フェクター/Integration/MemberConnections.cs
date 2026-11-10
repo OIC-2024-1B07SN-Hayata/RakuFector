@@ -1,4 +1,5 @@
 using CommonAudio;
+
 namespace FXForge.Integration;
 public static class MemberConnections
 {
