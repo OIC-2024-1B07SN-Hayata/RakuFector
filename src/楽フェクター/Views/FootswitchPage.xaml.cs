@@ -20,10 +20,10 @@ public partial class FootswitchPage : UserControl, INotifyPropertyChanged
 {
     public string[] Assignments { get; } =
     [
-        "-- NONE --", "Delay ON/OFF", "Reverb ON/OFF", "Distortion ON/OFF",
+        "-- NONE --","SD-1 ON/OFF","AMP ON/OFF","RAT ON/OFF", "Delay ON/OFF", "Reverb ON/OFF", "Distortion ON/OFF",
         "Chorus ON/OFF", "Next Preset", "Previous Preset",
-        "Preset 1", "Preset 2", "Preset 3", "Preset 4", "Preset 5", "Tuner",
-        "Drive B ON/OFF", "AMP ON/OFF"
+        "Preset 1", "Preset 2", "Preset 3", "Preset 4", "Preset 5", "Tuner"
+         
     ];
 
     public int[] PhysicalCounts { get; } = Enumerable.Range(1, 10).ToArray();
@@ -32,7 +32,7 @@ public partial class FootswitchPage : UserControl, INotifyPropertyChanged
     // The actual audio controls and page navigation remain owned by MainWindow.
     public Func<string, int, FootswitchActionResult>? ExecuteAction { get; set; }
 
-    private int _physicalCount = 2;
+    private int _physicalCount = 3;
     public int PhysicalCount
     {
         get => _physicalCount;
@@ -68,6 +68,8 @@ public partial class FootswitchPage : UserControl, INotifyPropertyChanged
     {
         InitializeComponent();
         Switches.Add(new FootSwitchSetting { Number = 1 });
+        Switches.Add(new FootSwitchSetting { Number = 2 });
+        Switches.Add(new FootSwitchSetting { Number = 3 });
         DataContext = this;
         RefreshStatus();
     }
@@ -130,9 +132,8 @@ public partial class FootswitchPage : UserControl, INotifyPropertyChanged
     // its normal keyboard operation, and modified shortcuts are not intercepted.
     public bool TryHandleKey(KeyEventArgs e)
     {
-        if (Keyboard.Modifiers != ModifierKeys.None || PhysicalCountSelector.IsKeyboardFocusWithin)
+        if (Keyboard.Modifiers != ModifierKeys.None)
             return false;
-
         // WPF sometimes reports F10 as a system key; normalize it for SW-10.
         Key key = e.Key == Key.System ? e.SystemKey : e.Key;
         int number = key switch
@@ -140,13 +141,7 @@ public partial class FootswitchPage : UserControl, INotifyPropertyChanged
             Key.F1 => 1,
             Key.F2 => 2,
             Key.F3 => 3,
-            Key.F4 => 4,
-            Key.F5 => 5,
-            Key.F6 => 6,
-            Key.F7 => 7,
-            Key.F8 => 8,
-            Key.F9 => 9,
-            Key.F10 => 10,
+            
             _ => 0
         };
         if (number < 1 || number > Switches.Count) return false;
@@ -181,7 +176,7 @@ public partial class FootswitchPage : UserControl, INotifyPropertyChanged
             var configuration = JsonSerializer.Deserialize<FootSwitchSettingsFile>(File.ReadAllText(dialog.FileName),
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (configuration is null) throw new InvalidDataException("設定ファイルが空です。");
-            PhysicalCount = Math.Clamp(configuration.PhysicalCount, 1, 10);
+            PhysicalCount = 3; 
             Switches.Clear();
             foreach (var loaded in (configuration.Switches ?? new()).Take(PhysicalCount))
             {
@@ -191,7 +186,10 @@ public partial class FootswitchPage : UserControl, INotifyPropertyChanged
                 item.Assignment = Assignments.Contains(loaded.Assignment) ? loaded.Assignment : "-- NONE --";
                 Switches.Add(item);
             }
-            if (Switches.Count == 0) Switches.Add(new FootSwitchSetting { Number = 1 });
+            while (Switches.Count < 3)
+            {
+                Switches.Add(new FootSwitchSetting { Number = Switches.Count + 1 });
+            }
             RefreshStatus("設定を読み込みました（音作りのON/OFF状態は変更しません）。");
         }
         catch (Exception ex) { MessageBox.Show(ex.Message, "読込に失敗しました", MessageBoxButton.OK, MessageBoxImage.Error); }
