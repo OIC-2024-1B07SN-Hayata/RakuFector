@@ -1,5 +1,6 @@
 using ChordDetection.Core.Chords;
 using ChordDetection.Core.Models;
+using ChordDetection.Core.Music;
 
 namespace ChordDetection.Core.Keys;
 
@@ -13,6 +14,9 @@ public sealed record KeyResult(int Tonic, bool IsMinor, ChordResult FinalChord, 
 {
     /// <summary>Key name such as "C" or "Am".</summary>
     public string Name => PitchClasses.Name(Tonic) + (IsMinor ? "m" : "");
+
+    /// <summary>The key as a value for transposition and #/b spelling.</summary>
+    public MusicKey Key => new(Tonic, IsMinor);
 
     public string JapaneseName => $"{PitchClasses.Name(Tonic)} {(IsMinor ? "マイナー" : "メジャー")}";
 

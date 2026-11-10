@@ -23,7 +23,9 @@ public partial class DrumEditorView : UserControl
     string? path, suggestedSaveName, midiFolder;
     string baseline;
     string audioError = "";
-    bool refreshing, busy, preparingAudio, requestedPlay, syncingScroll, snapshot;
+    bool refreshing, busy, preparingAudio, requestedPlay, syncingScroll;
+    // Reserved for a screenshot mode (suppresses dialogs); explicitly false so it does not warn as unassigned.
+    readonly bool snapshot = false;
     readonly List<double> taps = [];
     double? lastTap;
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(33) };

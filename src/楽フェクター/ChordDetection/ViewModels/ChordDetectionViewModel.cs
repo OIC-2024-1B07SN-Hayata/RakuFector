@@ -8,6 +8,7 @@ using ChordDetection.Core;
 using ChordDetection.Core.Chords;
 using ChordDetection.Core.Keys;
 using ChordDetection.Core.Models;
+using ChordDetection.Core.Music;
 using ChordDetection.Infrastructure.Audio;
 using ChordDetection.Infrastructure.Chroma;
 using ChordDetection.Infrastructure.Separation;
@@ -18,6 +19,15 @@ using CommunityToolkit.Mvvm.Input;
 namespace ChordDetection.App.ViewModels;
 
 public sealed record StemOption(string Stem, string Label);
+
+/// <summary>One capo position in the capo selector.</summary>
+public sealed record CapoOption(int Value, string Label);
+
+/// <summary>One row of the capo suggestions.</summary>
+/// <param name="Capo">Capo fret applied when the row is clicked.</param>
+/// <param name="Shapes">Shapes to fret there, e.g. "G  C  D  Em".</param>
+/// <param name="IsCurrent">True when this capo is the one selected now.</param>
+public sealed record CapoSuggestionRow(int Capo, string Title, string Shapes, string ScoreText, bool IsCurrent);
 
 /// <summary>A second mark on the timeline ruler.</summary>
 public sealed record TimelineTick(double Left, string Label);
@@ -36,6 +46,8 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     private readonly ChordSimplifier _simplifier;
     private readonly KeyEstimator _keyEstimator = new();
     private KeyResult? _key;
+    private readonly CapoAdvisor _capoAdvisor = new();
+    private readonly ChordHistory _history = new(); // chords of finished analyses, for the capo suggestions
     private bool _keyDecided; // true once the whole performance is analysed (also when no key was found)
     private readonly IFileDialogService _dialogs;
     private readonly ISourceSeparator? _separator;
@@ -160,11 +172,33 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     /// <summary>True once the analysis has finished; the key badge is hidden for intermediate results.</summary>
     [ObservableProperty] private bool _isKeyVisible;
 
-    /// <summary>Key in the badge, e.g. "Am"; "≈ Am" when major / minor was estimated; "—" when undecided.</summary>
+    /// <summary>Key in the badge, e.g. "Am"; "≈ Am" when major / minor was estimated; "-" when undecided.</summary>
     [ObservableProperty] private string _keyName = "";
 
     /// <summary>Second part of the badge, e.g. "A マイナー ・ 平行調 C".</summary>
     [ObservableProperty] private string _keyDetail = "";
+
+    // ---------- transposition / capo ----------
+
+    /// <summary>Semitones the shown chords and key are moved by (−6 … +6); display only, no re-analysis.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TransposeText))]
+    private int _transpose;
+
+    /// <summary>Capo fret (0 = none … 7). The timeline then also shows the shape to fret.</summary>
+    [ObservableProperty] private int _capo;
+
+    public string TransposeText => Transpose == 0 ? "0" : Transpose.ToString("+0;-0", CultureInfo.InvariantCulture);
+
+    public IReadOnlyList<CapoOption> CapoOptions { get; } =
+        [.. Enumerable.Range(Transposer.MinCapo, Transposer.MaxCapo - Transposer.MinCapo + 1)
+            .Select(c => new CapoOption(c, c == 0 ? "なし" : c.ToString(CultureInfo.InvariantCulture)))];
+
+    /// <summary>The three easiest capo positions; empty while nothing is known.</summary>
+    [ObservableProperty] private IReadOnlyList<CapoSuggestionRow> _capoSuggestions = [];
+
+    /// <summary>What the suggestions are based on, e.g. "弾いたコードから（4 種類）"; "-" when there are none.</summary>
+    [ObservableProperty] private string _capoSuggestionSourceText = "-";
 
     public string RecordButtonText => IsRecording ? "■  停止して解析" : "●  録音開始";
 
@@ -316,6 +350,8 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
             else _recorder.StartFromDevice(SelectedDeviceIndex, path);
             _recordingClock.Restart();
             IsRecording = true;
+            // A new take starts a new song: the capo suggestions use only the chords played from here on.
+            ResetChordHistory();
             StatusText = "録音中…（エフェクトをかける前のドライ音を録音しています）";
         }
         catch (Exception ex)
@@ -363,6 +399,7 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     {
         UnloadPlayback();
         _analysis = null;
+        _history.Reset(); // the capo suggestions start over as well
         SourceName = "（未選択）";
         SummaryText = "";
         StatusText = "録音するか、音声ファイル（WAV / MP3 など）を開いてください。";
@@ -497,6 +534,8 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
             _analysis = analysis;
             _key = _keyEstimator.Estimate(analysis); // only the final result decides the key
             _keyDecided = true;
+            // Only finished takes go into the history (intermediate results would count chords twice).
+            _history.AddRange(_simplifier.SimplifyTimeline(analysis.Chords, ShownLevel, alsoShown: AlsoShownTypes).Select(c => c.Chord));
             RefreshDisplay();                                               // stage 7
             StatusText = $"解析完了（{(chroma ? "クロマ方式, " : "")}{clock.Elapsed.TotalSeconds:0.0} 秒） {stemPath ?? path}";
         }
@@ -516,8 +555,8 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         {
             IsAnalyzing = false;
             AnalysisProgress = 0;
-            _analysisCts.Dispose();
-            _analysisCts = null;
+            var cts = Interlocked.Exchange(ref _analysisCts, null);
+            cts?.Dispose();
         }
     }
 
@@ -620,42 +659,115 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
             _key = null;
             _keyDecided = false;
             UpdateKeyBadge();
+            UpdateCapoSuggestions();
             UpdatePlaceholder();
             return;
         }
 
         // N.C. (no chord) is not shown; in the timeline its time is left empty.
-        foreach (var chord in _simplifier.SimplifyTimeline(_analysis.Chords, ShownLevel, alsoShown: AlsoShownTypes).Where(c => !c.Chord.IsNoChord))
-            Chords.Add(new ChordRowViewModel(chord, NotesIn(chord)));
+        // Shown chords are the sounding ones after transposition; with a capo the shape is shown as well.
+        var key = DisplayKey;
+        foreach (var detected in _simplifier.SimplifyTimeline(_analysis.Chords, ShownLevel, alsoShown: AlsoShownTypes).Where(c => !c.Chord.IsNoChord))
+        {
+            var sounding = detected with { Chord = Transposer.Transpose(detected.Chord, Transpose) };
+            string? shape = Capo > 0 ? NoteSpeller.SharpChordName(Transposer.Shape(sounding.Chord, Capo)) : null;
+            Chords.Add(new ChordRowViewModel(sounding, NoteSpeller.ChordName(sounding.Chord, key), shape, NotesIn(detected, key)));
+        }
         UpdateKeyBadge();
+        UpdateCapoSuggestions();
 
         UpdatePlaceholder();
         SummaryText = $"{_analysis.DurationSeconds:0.0} 秒 / 検出した音 {_analysis.Notes.Count} 個 / コード {Chords.Count} 個";
     }
 
+    /// <summary>The estimated key moved by the transposition; null while undecided (names then use #).</summary>
+    private MusicKey? DisplayKey => _key?.Key.Transpose(Transpose);
+
     /// <summary>Shows the key once the whole performance is analysed; intermediate results show none.</summary>
     private void UpdateKeyBadge()
     {
         IsKeyVisible = _keyDecided;
-        if (_key is null)
+        if (_key is null || DisplayKey is not { } key)
         {
-            KeyName = "—";
+            KeyName = "-";
             KeyDetail = "キーを判定できませんでした";
             return;
         }
 
         bool estimated = _key.ModeFromProfile;
-        KeyName = (estimated ? "≈ " : "") + _key.Name;
-        KeyDetail = $"{_key.JapaneseName}{(estimated ? "（推定）" : "")} ・ 平行調 {_key.RelativeName}";
+        KeyName = (estimated ? "≈ " : "") + key.Name;
+        KeyDetail = $"{key.JapaneseName}{(estimated ? "（推定）" : "")} ・ 平行調 {key.Relative.Name}";
     }
 
-    private string NotesIn(DisplayedChord shown) =>
+    partial void OnTransposeChanged(int value)
+    {
+        int clamped = Transposer.ClampTranspose(value);
+        if (clamped != value) { Transpose = clamped; return; }
+        RefreshDisplay();
+    }
+
+    /// <summary>
+    /// Any capo change (selector or suggestion) sets the transposition to +capo (capo 2 → +2).
+    /// </summary>
+    partial void OnCapoChanged(int value)
+    {
+        int clamped = Transposer.ClampCapo(value);
+        if (clamped != value) { Capo = clamped; return; }
+        int transpose = Transposer.ClampTranspose(clamped);
+        if (Transpose != transpose) { Transpose = transpose; return; } // OnTransposeChanged refreshes
+        RefreshDisplay();
+    }
+
+    /// <summary>
+    /// Applies a suggested capo position and sets the transposition to +capo (capo 2 → +2), as if the capo
+    /// raised the sound. Transpose is set here too so that clicking the current capo again resets it.
+    /// The parameter is the clicked row (a reference type): with an int parameter the command reports
+    /// "cannot execute" while WPF still passes null, and the button then stays disabled.
+    /// </summary>
+    [RelayCommand]
+    private void ApplyCapo(CapoSuggestionRow? row)
+    {
+        if (row is null) return;
+        int clamped = Transposer.ClampCapo(row.Capo);
+        Transpose = Transposer.ClampTranspose(clamped);
+        Capo = clamped;
+    }
+
+    /// <summary>
+    /// Forgets the played chords; suggestions go back to the key's representative chords.
+    /// Called when a recording starts (there is no button: クリア also forgets them).
+    /// </summary>
+    private void ResetChordHistory()
+    {
+        _history.Reset();
+        UpdateCapoSuggestions();
+    }
+
+    private void UpdateCapoSuggestions()
+    {
+        var (source, suggestions) = _capoAdvisor.Suggest(_history, _key?.Key, Transpose);
+        CapoSuggestionSourceText = source switch
+        {
+            CapoSuggestionSource.History => $"弾いたコードから（{_history.DistinctCount} 種類）",
+            CapoSuggestionSource.Key when DisplayKey is { } key => $"キー {key.Name} の代表コードから",
+            _ => "-",
+        };
+        CapoSuggestions = [.. suggestions.Select(s => new CapoSuggestionRow(
+            s.Capo,
+            s.Capo == 0 ? "カポなし" : $"カポ {s.Capo}",
+            string.Join("  ", s.Shapes),
+            $"{s.Score:0.0} 点",
+            s.Capo == Capo))];
+    }
+
+    /// <summary>Notes under a chord, moved by the transposition and spelled for the key.</summary>
+    private string NotesIn(DisplayedChord shown, MusicKey? key) =>
         string.Join(" ", _analysis!.Notes
             .Where(n => n.StartSeconds < shown.EndSeconds && n.EndSeconds > shown.StartSeconds)
-            .Select(n => n.Pitch)
+            .Select(n => n.Pitch + Transpose)
             .Distinct()
             .Order()
-            .Select(PitchClasses.MidiName));
+            .Select(p => NoteSpeller.MidiName(p, key)));
 
     // ---------- export ----------
 

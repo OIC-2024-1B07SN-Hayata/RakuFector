@@ -83,6 +83,76 @@
                 </Setter>
             </Style>
 
+            <!-- Capo suggestion row: left-aligned content; the capo selected now is outlined. -->
+            <Style x:Key="SuggestionButton" TargetType="Button" BasedOn="{StaticResource FlatButton}">
+                <Setter Property="Height" Value="Auto"/>
+                <Setter Property="Padding" Value="14,10"/>
+                <Setter Property="Margin" Value="0,0,0,8"/>
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlHover}"/>
+                                </Trigger>
+                                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Playhead}"/>
+                                    <Setter TargetName="Bd" Property="BorderThickness" Value="2"/>
+                                </DataTrigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Tabs at the top of the left card: equal-width headers with an underline on the selected one. -->
+            <Style x:Key="CardTabs" TargetType="TabControl">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabControl">
+                            <DockPanel>
+                                <Border DockPanel.Dock="Top" Margin="12,8,12,0" BorderBrush="{DynamicResource CardBorder}" BorderThickness="0,0,0,1">
+                                    <UniformGrid Rows="1" IsItemsHost="True"/>
+                                </Border>
+                                <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent"/>
+                            </DockPanel>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="CardTab" TargetType="TabItem">
+                <Setter Property="Foreground" Value="{DynamicResource TextMuted}"/>
+                <Setter Property="FontSize" Value="15"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabItem">
+                            <Border x:Name="Bd" Background="Transparent" BorderBrush="Transparent" BorderThickness="0,0,0,3" Padding="4,14,4,11">
+                                <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Playhead}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <!-- Small button in the developer section. -->
             <Style x:Key="SmallButton" TargetType="Button" BasedOn="{StaticResource FlatButton}">
                 <Setter Property="FontSize" Value="13"/>
@@ -156,7 +226,7 @@
                         <ControlTemplate TargetType="ComboBox">
                             <Grid>
                                 <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4"/>
-                                <ContentPresenter Margin="20,0,40,0" VerticalAlignment="Center" IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"/>
+                                <ContentPresenter Margin="20,0,40,0" VerticalAlignment="Center" IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"/>
                                 <ToggleButton Template="{StaticResource ComboToggle}" Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"/>
                                 <Popup IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False" PopupAnimation="Slide">
                                     <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource ControlBorder}" BorderThickness="1" CornerRadius="4" Margin="0,2,0,0" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
@@ -230,77 +300,128 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- マイク入力 / 設定 -->
-                <Border Grid.Column="0" Style="{StaticResource Card}" VerticalAlignment="Top">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="24,24,24,28">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="" Style="{StaticResource Icon}" FontSize="22" Margin="0,0,12,0" Foreground="{DynamicResource TextSecondary}"/>
-                            <TextBlock Text="マイク入力" Style="{StaticResource CardTitle}"/>
-                        </StackPanel>
+                <!-- マイク入力 / 移調・カポ / 設定: switched by the tabs at the top -->
+                <Border Grid.Column="0" Style="{StaticResource Card}">
+                    <TabControl Style="{StaticResource CardTabs}">
+                        <TabItem Style="{StaticResource CardTab}">
+                            <TabItem.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE720;" Style="{StaticResource Icon}" FontSize="16" Margin="0,0,6,0"/>
+                                    <TextBlock Text="マイク入力"/>
+                                </StackPanel>
+                            </TabItem.Header>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Margin="24,4,24,28">
+                                    <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
+                                        <Ellipse Width="14" Height="14" Margin="0,0,12,0" VerticalAlignment="Center" Fill="{Binding StateColor}"/>
+                                        <TextBlock Text="{Binding StateLabel}" FontSize="18" Foreground="{DynamicResource TextSecondary}"/>
+                                    </StackPanel>
 
-                        <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
-                            <Ellipse Width="14" Height="14" Margin="0,0,12,0" VerticalAlignment="Center" Fill="{Binding StateColor}"/>
-                            <TextBlock Text="{Binding StateLabel}" FontSize="18" Foreground="{DynamicResource TextSecondary}"/>
-                        </StackPanel>
+                                    <views:LevelMeter Height="20" Margin="0,16,0,0" Level="{Binding InputLevel}" Segments="22" OffBrush="{DynamicResource MeterOff}" OnBrush="{DynamicResource MeterOn}" ToolTip="入力レベル"/>
 
-                        <views:LevelMeter Height="20" Margin="0,16,0,0" Level="{Binding InputLevel}" Segments="22" OffBrush="{DynamicResource MeterOff}" OnBrush="{DynamicResource MeterOn}" ToolTip="入力レベル"/>
+                                    <!-- ギター直結: FX Forge の共通音声入力（ASIO） -->
+                                    <CheckBox Style="{StaticResource SettingCheckBox}" Margin="0,18,0,0" Content="ASIO で録音（ギター直結）" IsChecked="{Binding UseAsio}" IsEnabled="{Binding IsIdle}" ToolTip="オーディオインターフェースの ASIO ドライバーから、ギターをつないだ入力を録音します"/>
+                                    <StackPanel Margin="0,8,0,0" Visibility="{Binding UseAsio, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock Text="ASIO入力はアプリ右上の ⚙ で設定（他の機能と共有）" FontSize="12" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" Margin="0,2,0,8"/><TextBlock Text="{Binding InputGainText}" FontSize="13" Margin="0,4,0,2" Foreground="{DynamicResource TextMuted}"/>
+                                        <Slider Minimum="0" Maximum="30" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding InputGainDb}" ToolTip="ギターの音が小さいときに上げます（録音中も変更可）"/>
+                                    </StackPanel>
 
-                        <!-- ギター直結: FX Forge の共通音声入力（ASIO） -->
-                        <CheckBox Style="{StaticResource SettingCheckBox}" Margin="0,18,0,0" Content="ASIO で録音（ギター直結）" IsChecked="{Binding UseAsio}" IsEnabled="{Binding IsIdle}" ToolTip="オーディオインターフェースの ASIO ドライバーから、ギターをつないだ入力を録音します"/>
-                        <StackPanel Margin="0,8,0,0" Visibility="{Binding UseAsio, Converter={StaticResource BoolToVisibility}}">
-                            <TextBlock Text="ASIO入力はアプリ右上の ⚙ で設定（他の機能と共有）" FontSize="12" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" Margin="0,2,0,8"/><TextBlock Text="{Binding InputGainText}" FontSize="13" Margin="0,4,0,2" Foreground="{DynamicResource TextMuted}"/>
-                            <Slider Minimum="0" Maximum="30" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding InputGainDb}" ToolTip="ギターの音が小さいときに上げます（録音中も変更可）"/>
-                        </StackPanel>
+                                    <Button Margin="0,22,0,0" Style="{StaticResource RecordButton}" Content="{Binding RecordButtonText}" Command="{Binding ToggleRecordingCommand}"/>
+                                    <Button Margin="0,12,0,0" Style="{StaticResource FlatButton}" Command="{Binding OpenAudioFileCommand}" ToolTip="WAV / MP3 / M4A / AAC / WMA / FLAC を開いて解析します（タイムラインへのドラッグ＆ドロップでも開けます）">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="" Style="{StaticResource Icon}" FontSize="18" Margin="0,0,10,0"/>
+                                            <TextBlock Text="音声ファイルを開く…"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Grid Margin="0,12,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="12"/>
+                                            <ColumnDefinition Width="96"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Grid.Column="0" Style="{StaticResource FlatButton}" Content="{Binding PlayButtonText}" Command="{Binding TogglePlaybackCommand}" ToolTip="解析した音を再生します（音源分離したときも元の音）。タイムラインのコードをクリックすると、そこから再生します"/>
+                                        <Button Grid.Column="2" Style="{StaticResource FlatButton}" Content="■  停止" Command="{Binding StopPlaybackCommand}" ToolTip="停止して先頭に戻ります"/>
+                                    </Grid>
+                                    <TextBlock Text="{Binding PlaybackTimeText}" FontSize="15" Margin="0,6,0,0" HorizontalAlignment="Center" Foreground="{DynamicResource TextSecondary}"/>
+                                    <Button Margin="0,12,0,0" Style="{StaticResource FlatButton}" Content="クリア" Command="{Binding ClearCommand}"/>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+                        <TabItem Style="{StaticResource CardTab}">
+                            <TabItem.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE8D6;" Style="{StaticResource Icon}" FontSize="16" Margin="0,0,6,0"/>
+                                    <TextBlock Text="移調・カポ"/>
+                                </StackPanel>
+                            </TabItem.Header>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Margin="24,0,24,28">
+                                    <!-- Transposition / capo (display only, no re-analysis) -->
+                                    <!-- Transposition follows the capo (capo 2 → +2); shown only. -->
+                                    <DockPanel Margin="0,20,0,0">
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding TransposeText}" FontSize="24" FontWeight="Bold" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" ToolTip="カポを選ぶと、カポの数だけ移調します"/>
+                                        <TextBlock Text="移調（半音）" FontSize="18" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}"/>
+                                    </DockPanel>
 
-                        <Button Margin="0,22,0,0" Style="{StaticResource RecordButton}" Content="{Binding RecordButtonText}" Command="{Binding ToggleRecordingCommand}"/>
-                        <Button Margin="0,12,0,0" Style="{StaticResource FlatButton}" Command="{Binding OpenAudioFileCommand}" ToolTip="WAV / MP3 / M4A / AAC / WMA / FLAC を開いて解析します（タイムラインへのドラッグ＆ドロップでも開けます）">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="" Style="{StaticResource Icon}" FontSize="18" Margin="0,0,10,0"/>
-                                <TextBlock Text="音声ファイルを開く…"/>
-                            </StackPanel>
-                        </Button>
-                        <Grid Margin="0,12,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="12"/>
-                                <ColumnDefinition Width="96"/>
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0" Style="{StaticResource FlatButton}" Content="{Binding PlayButtonText}" Command="{Binding TogglePlaybackCommand}" ToolTip="解析した音を再生します（音源分離したときも元の音）。タイムラインのコードをクリックすると、そこから再生します"/>
-                            <Button Grid.Column="2" Style="{StaticResource FlatButton}" Content="■  停止" Command="{Binding StopPlaybackCommand}" ToolTip="停止して先頭に戻ります"/>
-                        </Grid>
-                        <TextBlock Text="{Binding PlaybackTimeText}" FontSize="15" Margin="0,6,0,0" HorizontalAlignment="Center" Foreground="{DynamicResource TextSecondary}"/>
-                        <Button Margin="0,12,0,0" Style="{StaticResource FlatButton}" Content="クリア" Command="{Binding ClearCommand}"/>
+                                    <TextBlock Text="カポ（フレット）" FontSize="18" Margin="0,20,0,12" Foreground="{DynamicResource TextPrimary}"/>
+                                    <ComboBox Style="{StaticResource ThemedComboBox}" ItemsSource="{Binding CapoOptions}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Capo}" ToolTip="カポを付けると、タイムラインに「押さえる形」も表示します"/>
 
-                        <Border Height="1" Margin="0,34,0,24" Background="{DynamicResource CardBorder}"/>
+                                    <DockPanel Margin="0,22,0,6">
+                                        <TextBlock Text="カポ位置の提案" FontSize="18" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding CapoSuggestionSourceText}" FontSize="13" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{DynamicResource TextMuted}"/>
+                                    <ItemsControl ItemsSource="{Binding CapoSuggestions}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type vm:CapoSuggestionRow}">
+                                                <Button Style="{StaticResource SuggestionButton}" ToolTip="クリックでこのカポ位置にします"
+                                                        CommandParameter="{Binding}" Command="{Binding DataContext.ApplyCapoCommand, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                                                    <StackPanel>
+                                                        <DockPanel>
+                                                            <TextBlock DockPanel.Dock="Right" Text="{Binding ScoreText}" FontSize="13" VerticalAlignment="Center" Foreground="{DynamicResource TextMuted}"/>
+                                                            <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="Bold"/>
+                                                        </DockPanel>
+                                                        <TextBlock Text="{Binding Shapes}" FontSize="14" Margin="0,4,0,0" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}"/>
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+                        <TabItem Style="{StaticResource CardTab}">
+                            <TabItem.Header>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE713;" Style="{StaticResource Icon}" FontSize="16" Margin="0,0,6,0"/>
+                                    <TextBlock Text="設定"/>
+                                </StackPanel>
+                            </TabItem.Header>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Margin="24,0,24,28">
+                                    <TextBlock Text="チューニング" FontSize="18" Margin="0,20,0,12" Foreground="{DynamicResource TextPrimary}"/>
+                                    <ComboBox Style="{StaticResource ThemedComboBox}" ItemsSource="{Binding Tunings}" SelectedItem="{Binding SelectedTuning}" IsEnabled="{Binding IsIdle}" ToolTip="基準ピッチ（現在は表示のみ。解析は 440Hz 固定です）"/>
 
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="" Style="{StaticResource Icon}" FontSize="20" FontWeight="Bold" Margin="0,0,8,0" Foreground="{DynamicResource TextPrimary}"/>
-                            <TextBlock Text="設定" Style="{StaticResource CardTitle}"/>
-                        </StackPanel>
+                                    <CheckBox Style="{StaticResource SettingCheckBox}" Margin="0,20,0,0" Content="音作りした音（歪み）" IsChecked="{Binding IsToneShaped}" IsEnabled="{Binding IsIdle}" ToolTip="歪ませた音向け。歪みで弱くなった弾いた音も拾うように、音の検出の条件を緩めます（次の解析から有効）"/>
+                                    <CheckBox Style="{StaticResource SettingCheckBox}" Margin="0,14,0,0" Content="音源分離（Demucs）して解析" IsChecked="{Binding UseSourceSeparation}" IsEnabled="{Binding IsSeparationAvailable}" ToolTip="{Binding SeparationToolTip}" ToolTipService.ShowOnDisabled="True"/>
+                                    <ComboBox Style="{StaticResource ThemedComboBox}" Height="44" FontSize="16" Margin="30,10,0,0" ItemsSource="{Binding Stems}" SelectedItem="{Binding SelectedStem}" DisplayMemberPath="Label" IsEnabled="{Binding UseSourceSeparation}" ToolTip="音源分離のあとに解析するトラック（ファイルを開いたときに有効）"/>
 
-                        <TextBlock Text="チューニング" FontSize="18" Margin="0,20,0,12" Foreground="{DynamicResource TextPrimary}"/>
-                        <ComboBox Style="{StaticResource ThemedComboBox}" ItemsSource="{Binding Tunings}" SelectedItem="{Binding SelectedTuning}" IsEnabled="{Binding IsIdle}" ToolTip="基準ピッチ（現在は表示のみ。解析は 440Hz 固定です）"/>
-
-                        <CheckBox Style="{StaticResource SettingCheckBox}" Margin="0,20,0,0" Content="音作りした音（歪み）" IsChecked="{Binding IsToneShaped}" IsEnabled="{Binding IsIdle}" ToolTip="歪ませた音向け。歪みで弱くなった弾いた音も拾うように、音の検出の条件を緩めます（次の解析から有効）"/>
-                        <CheckBox Style="{StaticResource SettingCheckBox}" Margin="0,14,0,0" Content="音源分離（Demucs）して解析" IsChecked="{Binding UseSourceSeparation}" IsEnabled="{Binding IsSeparationAvailable}" ToolTip="{Binding SeparationToolTip}" ToolTipService.ShowOnDisabled="True"/>
-                        <ComboBox Style="{StaticResource ThemedComboBox}" Height="44" FontSize="16" Margin="30,10,0,0" ItemsSource="{Binding Stems}" SelectedItem="{Binding SelectedStem}" DisplayMemberPath="Label" IsEnabled="{Binding UseSourceSeparation}" ToolTip="音源分離のあとに解析するトラック（ファイルを開いたときに有効）"/>
-
-                        <!-- Demo / evaluation features that are not part of the product screen. -->
-                        <Expander Margin="0,24,0,0" FontSize="14">
-                            <Expander.Header>
-                                <TextBlock Text="詳細設定（開発用）" Foreground="{DynamicResource TextSecondary}"/>
-                            </Expander.Header>
-                            <StackPanel Margin="0,10,0,0">
-                                <TextBlock Text="入力デバイス" FontSize="13" Margin="0,0,0,4" Foreground="{DynamicResource TextMuted}"/>
-                                <ComboBox Style="{StaticResource SmallComboBox}" ItemsSource="{Binding InputDevices}" SelectedIndex="{Binding SelectedDeviceIndex}" IsEnabled="{Binding IsIdle}" ToolTip="録音する入力デバイス（ギターをつないだオーディオインターフェース）"/>
-                                <CheckBox Style="{StaticResource DevCheckBox}" Margin="0,6,0,6" Content="クロマ方式で解析（比較用）" IsChecked="{Binding UseChroma}" IsEnabled="{Binding IsIdle}" ToolTip="Basic Pitch を使わず、12音の強さ（クロマ）からコードを判定します。今の方式と結果を比べるために使います（次の解析から有効。「音作りした音」の設定は効きません）"/>
-                                <Button Style="{StaticResource SmallButton}" Content="音のリストをCSV保存…" Command="{Binding ExportNotesCommand}" ToolTip="公式Python版との比較用（tools/compare_notes.py）"/>
-                                <Button Style="{StaticResource SmallButton}" Content="解析をキャンセル" Command="{Binding CancelAnalysisCommand}" Visibility="{Binding IsAnalyzing, Converter={StaticResource BoolToVisibility}}"/>
-                            </StackPanel>
-                        </Expander>
-                    </StackPanel>
-                    </ScrollViewer>
+                                    <!-- Demo / evaluation features that are not part of the product screen. -->
+                                    <Expander Margin="0,24,0,0" FontSize="14">
+                                        <Expander.Header>
+                                            <TextBlock Text="詳細設定（開発用）" Foreground="{DynamicResource TextSecondary}"/>
+                                        </Expander.Header>
+                                        <StackPanel Margin="0,10,0,0">
+                                            <TextBlock Text="入力デバイス" FontSize="13" Margin="0,0,0,4" Foreground="{DynamicResource TextMuted}"/>
+                                            <ComboBox Style="{StaticResource SmallComboBox}" ItemsSource="{Binding InputDevices}" SelectedIndex="{Binding SelectedDeviceIndex}" IsEnabled="{Binding IsIdle}" ToolTip="録音する入力デバイス（ギターをつないだオーディオインターフェース）"/>
+                                            <CheckBox Style="{StaticResource DevCheckBox}" Margin="0,6,0,6" Content="クロマ方式で解析（比較用）" IsChecked="{Binding UseChroma}" IsEnabled="{Binding IsIdle}" ToolTip="Basic Pitch を使わず、12音の強さ（クロマ）からコードを判定します。今の方式と結果を比べるために使います（次の解析から有効。「音作りした音」の設定は効きません）"/>
+                                            <Button Style="{StaticResource SmallButton}" Content="音のリストをCSV保存…" Command="{Binding ExportNotesCommand}" ToolTip="公式Python版との比較用（tools/compare_notes.py）"/>
+                                            <Button Style="{StaticResource SmallButton}" Content="解析をキャンセル" Command="{Binding CancelAnalysisCommand}" Visibility="{Binding IsAnalyzing, Converter={StaticResource BoolToVisibility}}"/>
+                                        </StackPanel>
+                                    </Expander>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+                    </TabControl>
                 </Border>
 
                 <!-- Timeline -->
@@ -380,6 +501,8 @@
                                                 <StackPanel>
                                                     <TextBlock Text="{Binding Name}" Foreground="White" FontSize="30" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
                                                     <TextBlock Text="{Binding StartText}" Foreground="#E0FFFFFF" FontSize="13" Margin="0,4,0,0"/>
+                                                    <!-- With a capo: the shape to fret -->
+                                                    <TextBlock Text="{Binding ShapeText}" Foreground="White" FontSize="15" FontWeight="SemiBold" Margin="0,10,0,0" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>

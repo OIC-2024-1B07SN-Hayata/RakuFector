@@ -8,18 +8,26 @@ public sealed class ChordRowViewModel
     /// <summary>Timeline scale (the design shows one second per 174 px).</summary>
     public const double PixelsPerSecond = 174;
 
-    public ChordRowViewModel(DisplayedChord chord, string notes)
+    /// <param name="chord">The sounding chord (already transposed).</param>
+    /// <param name="name">Its name spelled for the key, e.g. "Bb".</param>
+    /// <param name="shape">Shape to fret with the capo, e.g. "G"; null without a capo.</param>
+    public ChordRowViewModel(DisplayedChord chord, string name, string? shape, string notes)
     {
         StartSeconds = chord.StartSeconds;
         EndSeconds = chord.EndSeconds;
-        Name = chord.Name;
+        Name = name;
+        ShapeText = shape is null ? "" : $"押さえる形 {shape}";
         Notes = notes;
         Color = RootColor(chord.Chord);
     }
 
     public double StartSeconds { get; }
     public double EndSeconds { get; }
+    /// <summary>Sounding chord name.</summary>
     public string Name { get; }
+
+    /// <summary>"押さえる形 G" with a capo; empty without.</summary>
+    public string ShapeText { get; }
 
     /// <summary>Detected notes, e.g. "E2 B2 E3".</summary>
     public string Notes { get; }
@@ -35,7 +43,8 @@ public sealed class ChordRowViewModel
     public double Width => Math.Max(24, (EndSeconds - StartSeconds) * PixelsPerSecond - 2);
 
     /// <summary>Tooltip: time, detailed-level names and notes.</summary>
-    public string ToolTip => $"{StartText} – {EndText}（{DurationText}）\n音: {Notes}";
+    public string ToolTip => $"{StartText} – {EndText}（{DurationText}）\n音: {Notes}"
+        + (ShapeText.Length > 0 ? $"\n{ShapeText}" : "");
 
     /// <summary>Background colour; the hue follows the root so equal chords look alike.</summary>
     public string Color { get; }
