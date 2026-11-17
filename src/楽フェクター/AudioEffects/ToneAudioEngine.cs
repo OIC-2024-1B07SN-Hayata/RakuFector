@@ -13,6 +13,13 @@ public sealed class ToneAudioEngine
     private int _rate;
     private double _master = .65, _masterSmooth, _pathMix, _pathSmooth;
 
+    // 0：通常の音作り、1：一時的に原音へ切り替える
+    private int _temporaryBypass;
+    public void SetTemporaryBypass(bool enabled)
+    {
+        Volatile.Write(ref _temporaryBypass, enabled ? 1 : 0);
+    }
+
     public void SetSettings(ToneSettings settings) =>
         Volatile.Write(ref _settings, settings ?? throw new ArgumentNullException(nameof(settings)));
 
@@ -22,7 +29,16 @@ public sealed class ToneAudioEngine
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         var settings = Volatile.Read(ref _settings);
         double targetMaster = DriveStage.Unit(settings.OutputLevel);
-        double targetPathMix = settings.A.Enabled || settings.B.Enabled || settings.Amp.Enabled ? 1 : 0;
+        bool temporaryBypass =
+    Volatile.Read(ref _temporaryBypass) != 0;
+
+        bool anyEffectEnabled =
+            settings.A.Enabled ||
+            settings.B.Enabled ||
+            settings.Amp.Enabled;
+
+        double targetPathMix =
+            !temporaryBypass && anyEffectEnabled ? 1.0 : 0.0;
         if (_rate != sampleRate)
         {
             Reset(); _rate = sampleRate; _master = targetMaster; _pathMix = targetPathMix;
