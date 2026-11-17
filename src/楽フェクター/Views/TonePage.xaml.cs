@@ -17,6 +17,13 @@ public partial class TonePage : UserControl, INotifyPropertyChanged
     private bool _applyingPreset;
     public void ProcessAudioOutput(float[] samples, int sampleRate) => _engine.Process(samples, sampleRate);
     public void ResetAudio() => _engine.Reset();
+
+    // 画面切替側から音声エンジンへ状態を伝える
+    public void SetTemporaryBypass(bool enabled)
+    {
+        _engine.SetTemporaryBypass(enabled);
+    }
+
     public void ReceiveAudio(float[] samples, int sampleRate, int channels) { /* 元の入力の受け取り口 */ }
 
     public ObservableCollection<EffectItem> Effects { get; } = new();

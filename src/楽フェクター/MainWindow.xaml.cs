@@ -280,6 +280,9 @@ public partial class MainWindow : Window
     private void FootswitchNav_Click(object sender, RoutedEventArgs e) => ShowPage("Footswitch");
     private void ShowPage(string page)
     {
+        // チューナー画面の間だけエフェクトを一時バイパスする
+        _tone.SetTemporaryBypass(page == "Tuner");
+
         bool drumPage = page == "Drum";
         ShellRoot.RowDefinitions[0].Height = new GridLength(drumPage ? 0 : 76);
         ShellRoot.RowDefinitions[2].Height = new GridLength(drumPage ? 0 : 36);
