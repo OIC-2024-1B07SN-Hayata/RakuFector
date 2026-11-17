@@ -46,8 +46,18 @@ public sealed class ToneAudioEngine
                 highRateSamples[sub] = _amp.Process(x);
             }
             double wet = _resampler.Down();
-            double output = (input + (wet - input) * _pathMix) * _master;
-            samples[i] = double.IsFinite(output) ? (float)SafetyCeiling(output) : 0;
+
+            double output =
+                (input + (wet - input) * _pathMix)
+                * _master;
+
+            // 音割れを避けるため、出力を一時的に下げる
+            output *= 0.2;
+
+            // SafetyCeilingを通さずに出力する
+            samples[i] = double.IsFinite(output)
+                ? (float)Math.Clamp(output, -1.0, 1.0)
+                : 0f;
         }
     }
 

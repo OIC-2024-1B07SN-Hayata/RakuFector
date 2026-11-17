@@ -1,79 +1,528 @@
+
 using System;
 
 namespace FXForge.AudioEffects;
 
-// SD-1ã¯å‰ç‰ˆRATç¨‹åº¦ã€RATã¯ã•ã‚‰ã«å¼·ã„æ­ªã¿ã¨ä¸­é«˜åŸŸã®ã–ã‚‰ã¤ãã€‚ç‹¬è‡ªã®éŸ³è‰²è¨­è¨ˆã§ã™ã€‚
 internal sealed class DriveStage
 {
-    private readonly Biquad _inputCut = new(), _inputLow = new(), _gritSplit = new();
-    private readonly Biquad _tone = new(), _mid = new(), _body = new(), _dc = new();
-    private readonly AntialiasedRatClipper _ratClipper = new(), _gritClipper = new();
+    // ========================================
+    // ‹¤’ÊƒtƒBƒ‹ƒ^[
+    // ========================================
+
+    private readonly Biquad _inputHighPass = new();
+    private readonly Biquad _inputLowPass = new();
+    private readonly Biquad _tone = new();
+    private readonly Biquad _mid = new();
+    private readonly Biquad _body = new();
+    private readonly Biquad _dc = new();
+
+    // ========================================
+    // RAT ƒƒCƒ“ƒNƒŠƒbƒsƒ“ƒO
+    // ========================================
+
+    private readonly Biquad _ratPreBass = new();
+    private readonly Biquad _ratPreMid = new();
+
+    private readonly AntialiasedRatClipper
+        _ratMainClipper = new();
+
+    // ========================================
+    // RAT ‘æ2ƒNƒŠƒbƒsƒ“ƒO
+    // ========================================
+
+    private readonly Biquad _ratSecondHighPass = new();
+    private readonly Biquad _ratSecondMid = new();
+    private readonly Biquad _ratSecondLowPass = new();
+
+    private readonly AntialiasedRatClipper
+        _ratSecondClipper = new();
+
+    // ========================================
+    // Drive˜A“®EQ
+    // ========================================
+
+    private readonly Biquad _ratDriveBassEq = new();
+    private readonly Biquad _ratDriveMidEq = new();
+
+    // ========================================
+    // “à•”ó‘Ô
+    // ========================================
+
     private DriveSettings? _settings;
-    private double _rate, _gain = 1, _gainTarget = 1, _level = 1, _levelTarget = 1;
-    private double _mix, _mixTarget, _smooth;
     private DriveKind _kind;
 
-    public void Configure(DriveSettings settings, double rate)
+    private double _rate;
+    private double _smooth;
+
+    private double _gain = 1.0;
+    private double _gainTarget = 1.0;
+
+    private double _level = 1.0;
+    private double _levelTarget = 1.0;
+
+    private double _mix;
+    private double _mixTarget;
+
+    private double _driveEqMix;
+    private double _driveEqTarget;
+
+    private double _secondGain = 1.0;
+    private double _secondGainTarget = 1.0;
+
+    // ã‚¢“ü—Í‰¹‚Ö‚ÌŒÀ’è“I‚È‘••â•
+    private double _inputEnvelope;
+    private double _inputBoost = 1.0;
+
+    private double _envAttack;
+    private double _envRelease;
+
+    // ========================================
+    // İ’è
+    // ========================================
+
+    public void Configure(
+        DriveSettings settings,
+        double rate)
     {
-        if (_settings == settings && _rate == rate) return;
-        double drive = Unit(settings.Drive);
-        if (_settings is null || _kind != settings.Kind || _rate != rate ||
-            (settings.Enabled && !_settings.Enabled && _mix < 1e-8)) Reset();
+        ArgumentNullException.ThrowIfNull(settings);
+
+        if (!double.IsFinite(rate) ||
+            rate < 8000 ||
+            rate > 1536000)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(rate));
+        }
+
+        if (_settings == settings && _rate == rate)
+        {
+            return;
+        }
+
+        bool first = _settings is null;
+        bool changedKind =
+            !first && _kind != settings.Kind;
+        bool changedRate = _rate != rate;
+
+        bool enabledFromOff =
+            !first &&
+            settings.Enabled &&
+            !_settings!.Enabled &&
+            _mix < 1e-8;
+
+        if (first || changedKind ||
+            changedRate || enabledFromOff)
+        {
+            Reset();
+        }
+
         _kind = settings.Kind;
-        _mixTarget = settings.Enabled ? 1 : 0;
-        _smooth = 1 - Math.Exp(-1 / (.008 * rate));
-        bool sd1 = _kind == DriveKind.Sd1;
-        _levelTarget = (sd1 ? DriveVoicing.Sd1.LevelScale : DriveVoicing.Rat.LevelScale) * Unit(settings.Level);
-        _gainTarget = sd1
-            ? DriveVoicing.Sd1.GainMinimum + DriveVoicing.Sd1.GainRange * drive * drive
-            : DriveVoicing.Rat.GainMinimum + DriveVoicing.Rat.GainRange * drive * drive;
-        _inputCut.HighPass(rate, sd1 ? DriveVoicing.Sd1.InputHighPassHz : DriveVoicing.Rat.InputHighPassHz);
-        _inputLow.LowPass(rate, sd1 ? DriveVoicing.Sd1.InputLowPassHz : DriveVoicing.Rat.InputLowPassHz);
-        _gritSplit.LowPass(rate, DriveVoicing.Rat.GritSplitHz);
-        _dc.HighPass(rate, 18);
-        _mid.Peak(rate, sd1 ? DriveVoicing.Sd1.MidHz : DriveVoicing.Rat.MidHz,
-            sd1 ? DriveVoicing.Sd1.MidDb : DriveVoicing.Rat.MidDb, .75);
-        _body.Shelf(rate, sd1 ? DriveVoicing.Sd1.BodyHz : DriveVoicing.Rat.BodyHz,
-            sd1 ? DriveVoicing.Sd1.BodyDb : DriveVoicing.Rat.BodyDb, false);
-        double cutoff = sd1
-            ? DriveVoicing.Sd1.ToneMinHz * Math.Pow(DriveVoicing.Sd1.ToneMaxHz / DriveVoicing.Sd1.ToneMinHz, Unit(settings.Tone))
-            : DriveVoicing.Rat.FilterMinHz * Math.Pow(DriveVoicing.Rat.FilterMaxHz / DriveVoicing.Rat.FilterMinHz, 1 - Unit(settings.Tone));
+        _mixTarget = settings.Enabled ? 1.0 : 0.0;
+
+        _smooth =
+            1.0 - Math.Exp(-1.0 / (0.008 * rate));
+
+        bool isSd1 = _kind == DriveKind.Sd1;
+
+        double drive = Unit(settings.Drive);
+        double tone = Unit(settings.Tone);
+
+        // ====================================
+        // ƒƒCƒ“GAIN
+        // ====================================
+
+        _gainTarget = isSd1
+            ? DriveVoicing.Sd1.GainMinimum
+              + DriveVoicing.Sd1.GainRange
+              * drive * drive
+            : DriveVoicing.Rat.GainMinimum
+              + DriveVoicing.Rat.GainRange
+              * drive * drive;
+
+        // ====================================
+        // o—ÍLEVEL
+        // ====================================
+
+        _levelTarget =
+            (isSd1
+                ? DriveVoicing.Sd1.LevelScale
+                : DriveVoicing.Rat.LevelScale)
+            * Unit(settings.Level);
+
+        // RATê—pDrive˜A“®İ’è
+        _driveEqTarget = isSd1 ? 0.0 : drive;
+
+        _secondGainTarget =
+            DriveVoicing.Rat.SecondStageGainMin
+            + DriveVoicing.Rat.SecondStageGainRange
+            * drive;
+
+        // ====================================
+        // “ü—ÍƒtƒBƒ‹ƒ^[
+        // ====================================
+
+        _inputHighPass.HighPass(
+            rate,
+            isSd1
+                ? DriveVoicing.Sd1.InputHighPassHz
+                : DriveVoicing.Rat.InputHighPassHz);
+
+        _inputLowPass.LowPass(
+            rate,
+            isSd1
+                ? DriveVoicing.Sd1.InputLowPassHz
+                : DriveVoicing.Rat.InputLowPassHz);
+
+        // ====================================
+        // RATê—p‚Ìˆ—
+        // ====================================
+
+        if (!isSd1)
+        {
+            // ˜c‚İ‘O‚Ì’áˆæ‚ğí‚é
+            _ratPreBass.Shelf(
+                rate,
+                DriveVoicing.Rat.PreBassHz,
+                DriveVoicing.Rat.PreBassDb,
+                false);
+
+            // ˜c‚İ‘O‚Ì’†ˆæ‚ğ•â‹­
+            _ratPreMid.Peak(
+                rate,
+                DriveVoicing.Rat.PreMidHz,
+                DriveVoicing.Rat.PreMidDb,
+                DriveVoicing.Rat.PreMidQ);
+
+            // ‘æ2’i‚Ì‘O‚É’áˆæ‚ğ®—
+            _ratSecondHighPass.HighPass(
+                rate,
+                DriveVoicing.Rat.SecondHighPassHz);
+
+            // ‘æ2’i‚Ì‘O‚Ì’†ˆæ
+            _ratSecondMid.Peak(
+                rate,
+                DriveVoicing.Rat.SecondMidHz,
+                DriveVoicing.Rat.SecondMidDb,
+                DriveVoicing.Rat.SecondMidQ);
+
+            _ratSecondLowPass.LowPass(
+                rate,
+                DriveVoicing.Rat.SecondLowPassHz);
+
+            // Drive˜A“®‚Ì’áˆæEQ
+            _ratDriveBassEq.Shelf(
+                rate,
+                DriveVoicing.Rat.DriveBassHz,
+                DriveVoicing.Rat.DriveBassBoostDb,
+                false);
+
+            // Drive˜A“®‚Ì’†ˆæEQ
+            _ratDriveMidEq.Peak(
+                rate,
+                DriveVoicing.Rat.DriveMidHz,
+                DriveVoicing.Rat.DriveMidBoostDb,
+                DriveVoicing.Rat.DriveMidQ);
+
+            // “ü—ÍƒŒƒxƒ‹’Ç]‚Ì‘¬“x
+            _envAttack =
+                1.0 - Math.Exp(
+                    -1.0 /
+                    (DriveVoicing.Rat.EnvelopeAttackMs
+                     * 0.001 * rate));
+
+            _envRelease =
+                1.0 - Math.Exp(
+                    -1.0 /
+                    (DriveVoicing.Rat.EnvelopeReleaseMs
+                     * 0.001 * rate));
+        }
+
+        // ====================================
+        // ‹¤’Ê‚ÌŒã’iEQ
+        // ====================================
+
+        _dc.HighPass(rate, 18.0);
+
+        _mid.Peak(
+            rate,
+            isSd1
+                ? DriveVoicing.Sd1.MidHz
+                : DriveVoicing.Rat.MidHz,
+            isSd1
+                ? DriveVoicing.Sd1.MidDb
+                : DriveVoicing.Rat.MidDb,
+            0.75);
+
+        _body.Shelf(
+            rate,
+            isSd1
+                ? DriveVoicing.Sd1.BodyHz
+                : DriveVoicing.Rat.BodyHz,
+            isSd1
+                ? DriveVoicing.Sd1.BodyDb
+                : DriveVoicing.Rat.BodyDb,
+            false);
+
+        // ====================================
+        // TONE / FILTER
+        // ====================================
+
+        double cutoff = isSd1
+            ? DriveVoicing.Sd1.ToneMinHz
+              * Math.Pow(
+                  DriveVoicing.Sd1.ToneMaxHz
+                  / DriveVoicing.Sd1.ToneMinHz,
+                  tone)
+            : DriveVoicing.Rat.FilterMinHz
+              * Math.Pow(
+                  DriveVoicing.Rat.FilterMaxHz
+                  / DriveVoicing.Rat.FilterMinHz,
+                  1.0 - tone);
+
         _tone.LowPass(rate, cutoff);
+
         _settings = settings;
         _rate = rate;
     }
 
+    // ========================================
+    // ‰¹ºˆ—
+    // ========================================
+
     public double Process(double input)
     {
-        _gain += (_gainTarget - _gain) * _smooth;
-        _level += (_levelTarget - _level) * _smooth;
-        _mix += (_mixTarget - _mix) * _smooth;
-        // å®Œå…¨OFFã®æ®µã§ã¯é‡ã„ãƒ•ã‚£ãƒ«ã‚¿ãƒ¼ã‚„æ­ªã¿è¨ˆç®—ã‚’çœãã€‚å†ONæ™‚ã«ã¯ä¸Šã§çŠ¶æ…‹ã‚’ãƒªã‚»ãƒƒãƒˆã€‚
-        if (_mixTarget == 0 && _mix < 1e-8) return input;
-        double clean = _inputLow.Process(_inputCut.Process(input));
+        if (!double.IsFinite(input))
+        {
+            return 0.0;
+        }
+
+        if (_settings is null)
+        {
+            return input;
+        }
+
+        // ====================================
+        // ƒpƒ‰ƒ[ƒ^[‚Ì•½ŠŠ‰»
+        // ====================================
+
+        _gain +=
+            (_gainTarget - _gain) * _smooth;
+
+        _level +=
+            (_levelTarget - _level) * _smooth;
+
+        _mix +=
+            (_mixTarget - _mix) * _smooth;
+
+        _driveEqMix +=
+            (_driveEqTarget - _driveEqMix) * _smooth;
+
+        _secondGain +=
+            (_secondGainTarget - _secondGain) * _smooth;
+
+        // Š®‘SOFF‚È‚çŒ´‰¹‚ğ•Ô‚·
+        if (_mixTarget == 0.0 && _mix < 1e-8)
+        {
+            return input;
+        }
+
+        double clean =
+            _inputLowPass.Process(
+                _inputHighPass.Process(input));
+
         double shaped;
+
+        // ====================================
+        // SD-1
+        // ====================================
+
         if (_kind == DriveKind.Sd1)
         {
-            double driven = DriveCurves.Sd1(clean * _gain);
-            shaped = _body.Process(driven * (1 - DriveVoicing.Sd1.CleanBlend) + clean * DriveVoicing.Sd1.CleanBlend);
+            double driven =
+                DriveCurves.Sd1(clean * _gain);
+
+            double blend =
+                DriveVoicing.Sd1.CleanBlend;
+
+            shaped = _body.Process(
+                driven * (1.0 - blend)
+                + clean * blend);
         }
+
+        // ====================================
+        // RAT
+        // ====================================
+
         else
         {
-            double driven = _ratClipper.Process(clean * _gain);
-            double upper = clean - _gritSplit.Process(clean);
-            double grit = _gritClipper.Process(upper * _gain * DriveVoicing.Rat.GritGain);
-            shaped = _body.Process((driven + grit * DriveVoicing.Rat.GritMix) / (1 + DriveVoicing.Rat.GritMix));
+            // --------------------------------
+            // 1. ˜c‚Ü‚¹‚é‘O‚É’áˆæ‚ğ®—‚µA
+            //    ’†ˆæ‚ğ•â‹­
+            // --------------------------------
+
+            double pre =
+                _ratPreMid.Process(
+                    _ratPreBass.Process(clean));
+
+            // --------------------------------
+            // 2. ã‚¢“ü—Í‰¹‚Ì‘••â•
+            // --------------------------------
+
+            double magnitude = Math.Abs(pre);
+
+            double envFactor =
+                magnitude > _inputEnvelope
+                    ? _envAttack
+                    : _envRelease;
+
+            _inputEnvelope +=
+                (magnitude - _inputEnvelope)
+                * envFactor;
+
+            double reference = Math.Max(
+                0.001,
+                DriveVoicing.Rat.AutoBoostTargetRmsLike);
+
+            double desiredBoost = Math.Clamp(
+                reference /
+                Math.Max(_inputEnvelope, 1e-6),
+                1.0,
+                DriveVoicing.Rat.MaxSingleNoteBoost);
+
+            _inputBoost +=
+                (desiredBoost - _inputBoost)
+                * _smooth;
+
+            // --------------------------------
+            // 3. ‘æ1ƒNƒŠƒbƒsƒ“ƒO
+            // --------------------------------
+
+            double main =
+                _ratMainClipper.Process(
+                    pre * _gain * _inputBoost);
+
+            // --------------------------------
+            // 4. ‘æ2ƒNƒŠƒbƒsƒ“ƒO‘O‚ÌEQ
+            // --------------------------------
+
+            double secondInput =
+                _ratSecondLowPass.Process(
+                    _ratSecondMid.Process(
+                        _ratSecondHighPass.Process(
+                            main)));
+
+            // --------------------------------
+            // 5. ‘æ2ƒNƒŠƒbƒsƒ“ƒO
+            // --------------------------------
+
+            double second =
+                _ratSecondClipper.Process(
+                    secondInput * _secondGain
+                    + DriveVoicing.Rat.SecondStageBias);
+
+            // --------------------------------
+            // 6. 2í—Ş‚Ì˜c‚İ‚ğ‡¬
+            // --------------------------------
+
+            double secondMix = Math.Clamp(
+                DriveVoicing.Rat.SecondStageMix,
+                0.0,
+                1.0);
+
+            shaped =
+                main + (second - main) * secondMix;
+
+            // --------------------------------
+            // 7. ˜c‚İŒã‚Ì’áˆæ•â³
+            // --------------------------------
+
+            shaped = _body.Process(shaped);
         }
-        double wet = _tone.Process(_mid.Process(_dc.Process(shaped))) * _level;
+
+        // ====================================
+        // ÅIEQ / FILTER
+        // ====================================
+
+        double wet =
+            _tone.Process(
+                _mid.Process(
+                    _dc.Process(shaped)));
+
+        // ====================================
+        // RAT Drive˜A“®EQ
+        // ====================================
+
+        if (_kind == DriveKind.Rat)
+        {
+            double bass =
+                _ratDriveBassEq.Process(wet);
+
+            wet +=
+                (bass - wet) * _driveEqMix;
+
+            double mid =
+                _ratDriveMidEq.Process(wet);
+
+            wet +=
+                (mid - wet) * _driveEqMix;
+        }
+
+        // ====================================
+        // o—ÍLEVEL
+        // ====================================
+
+        wet *= _level;
+
+        // ON/OFF‚ğŠŠ‚ç‚©‚ÉØ‚è‘Ö‚¦‚é
         return input + (wet - input) * _mix;
     }
 
+    // ========================================
+    // ƒŠƒZƒbƒg
+    // ========================================
+
     public void Reset()
     {
-        _inputCut.Reset(); _inputLow.Reset(); _gritSplit.Reset();
-        _tone.Reset(); _mid.Reset(); _body.Reset(); _dc.Reset();
-        _ratClipper.Reset(); _gritClipper.Reset();
-        _gain = _level = 1; _mix = 0;
+        _inputHighPass.Reset();
+        _inputLowPass.Reset();
+
+        _tone.Reset();
+        _mid.Reset();
+        _body.Reset();
+        _dc.Reset();
+
+        _ratPreBass.Reset();
+        _ratPreMid.Reset();
+        _ratMainClipper.Reset();
+
+        _ratSecondHighPass.Reset();
+        _ratSecondMid.Reset();
+        _ratSecondLowPass.Reset();
+        _ratSecondClipper.Reset();
+
+        _ratDriveBassEq.Reset();
+        _ratDriveMidEq.Reset();
+
+        _gain = _gainTarget = 1.0;
+        _level = _levelTarget = 1.0;
+
+        _mix = _mixTarget = 0.0;
+
+        _driveEqMix = _driveEqTarget = 0.0;
+
+        _secondGain = _secondGainTarget = 1.0;
+
+        _inputEnvelope = 0.0;
+        _inputBoost = 1.0;
+
+        _settings = null;
+        _rate = 0.0;
     }
-    internal static double Unit(double x) => double.IsFinite(x) ? Math.Clamp(x, 0, 1) : .5;
+
+    internal static double Unit(double value)
+    {
+        return double.IsFinite(value)
+            ? Math.Clamp(value, 0.0, 1.0)
+            : 0.5;
+    }
 }
