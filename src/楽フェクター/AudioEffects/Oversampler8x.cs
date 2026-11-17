@@ -43,7 +43,7 @@ internal sealed class Oversampler8x
             {
                 int n = 2 * k;
                 double offset = n - 31;
-                double window = .42 - .5 * Math.Cos(2 * Math.PI * n / 62) + .08 * Math.Cos(4 * Math.PI * n / 62);
+                double window = .42 - .5 * Math.Cos(2 * Math.PI * n / 62) + .04 * Math.Cos(4 * Math.PI * n / 62);
                 result[k] = Math.Sin(Math.PI * .5 * offset) / (Math.PI * offset) * window;
                 sum += result[k];
             }

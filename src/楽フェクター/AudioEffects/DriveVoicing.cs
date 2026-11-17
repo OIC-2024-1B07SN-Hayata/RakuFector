@@ -1,44 +1,145 @@
+
 namespace FXForge.AudioEffects;
 
-/// <summary>ã”å¸Œæœ›ã«åˆã‚ã›ãŸç‹¬è‡ªã®éŸ³è‰²ã€‚SD-1ã®åŸºæº–ã‚’å‰ç‰ˆRATä»˜è¿‘ã¸ç§»ã—ã€RATã‚’ã•ã‚‰ã«å¼·ãã—ã¦ã„ã¾ã™ã€‚</summary>
+/// <summary>
+/// SD-1 / RAT ‰¹Fƒpƒ‰ƒ[ƒ^[B
+/// RAT‚ÍÀ‹@‰ñ˜H‚ÌŠ®‘SÄŒ»‚Å‚Í‚È‚­A’²®—pDSPƒ‚ƒfƒ‹B
+/// </summary>
 public static class DriveVoicing
 {
     public static class Sd1
     {
-        // å‰ç‰ˆã®RATã¨åŒã˜ã‚²ã‚¤ãƒ³ãƒ»å…¥åŠ›å¸¯åŸŸãƒ»ä½åŸŸæ•´å½¢ã‚’åœŸå°ã«ã™ã‚‹ã€‚
-        public const double InputHighPassHz = 65;
-        public const double InputLowPassHz = 11500;
-        public const double GainMinimum = 3;
-        public const double GainRange = 95;
-        public const double PositiveCeiling = .48;
-        public const double NegativeCeiling = .44;
-        public const double KneeWidth = .055;
-        public const double CleanBlend = .02;
-        public const double BodyHz = 135;
-        public const double BodyDb = 3.8;
+        // SD-1‚Í•ÏX‚µ‚È‚¢
+        public const double GainMinimum = 1.5;
+        public const double GainRange = 20.0;
+        public const double PositiveCeiling = 0.70;
+        public const double NegativeCeiling = 0.55;
+        public const double KneeWidth = 0.20;
+        public const double CleanBlend = 0.30;
+        public const double InputHighPassHz = 145;
+        public const double InputLowPassHz = 6500;
+        public const double BodyHz = 150;
+        public const double BodyDb = 0.8;
         public const double MidHz = 850;
-        public const double MidDb = -1.2;
-        public const double ToneMinHz = 650;
-        public const double ToneMaxHz = 10500;
-        public const double LevelScale = 1.35;
+        public const double MidDb = 2.0;
+        public const double ToneMinHz = 1600;
+        public const double ToneMaxHz = 7000;
+        public const double LevelScale = 0.5;
     }
+
     public static class Rat
     {
-        public const double InputHighPassHz = 75;
-        public const double InputLowPassHz = 14500;
-        public const double GainMinimum = 2;
-        public const double GainRange = 160;
-        public const double ClipCeiling = .38;
-        public const double KneeWidth = .005;
-        public const double GritSplitHz = 1400;
-        public const double GritGain = 2.5;
-        public const double GritMix = .22; // ä¸­é«˜åŸŸã‚’åˆ¥ã«æ·±ãæ­ªã¾ã›ã€ã–ã‚‰ã¤ãã‚’è¶³ã™ã€‚
-        public const double BodyHz = 135;
-        public const double BodyDb = 8.5;
-        public const double MidHz = 1300;
-        public const double MidDb = 1.5;
-        public const double FilterMinHz = 800;
-        public const double FilterMaxHz = 13500;
-        public const double LevelScale = 1.35;
+        // ====================================
+        // 1. ˜c‚İ‘O‚Ì’áˆæ®—
+        // ====================================
+
+        public const double InputHighPassHz = 115.0;
+        public const double InputLowPassHz = 10500.0;
+
+        // ˜c‚İ‘O‚É’á‰¹‚ğ­‚µí‚é
+        public const double PreBassHz = 180.0;
+        public const double PreBassDb = -3.0;
+
+        // ˜c‚İ‘O‚É’†‰¹ˆæ‚ğ‹­’²
+        public const double PreMidHz = 780.0;
+        public const double PreMidDb = 4.0;
+        public const double PreMidQ = 0.85;
+
+        // ====================================
+        // 2. ƒƒCƒ“‚Ì˜c‚İ
+        // ====================================
+
+        public const double GainMinimum = 70.0;
+        public const double GainRange = 400.0;
+
+        public const double ClipCeiling = 0.40;
+        public const double KneeWidth = 0.07;
+
+        // ====================================
+        // 3. ã‚¢“ü—Í‰¹‚Ö‚Ì‘••â•
+        // ====================================
+
+        // 1.0‚É‚·‚ê‚Î‘••â•‚ğ–³Œø‰»
+        public const double MaxSingleNoteBoost = 2.0;
+
+        public const double AutoBoostTargetRmsLike = 0.015;
+
+        public const double EnvelopeAttackMs = 5.0;
+        public const double EnvelopeReleaseMs = 100.0;
+
+        // ====================================
+        // 4. ‘æ2ƒNƒŠƒbƒsƒ“ƒO
+        // ====================================
+
+        public const double SecondHighPassHz = 130.0;
+        public const double SecondLowPassHz = 7200.0;
+
+        public const double SecondMidHz = 1000.0;
+        public const double SecondMidDb = 2.0;
+        public const double SecondMidQ = 0.85;
+
+        // ‘æ2’i‚Ì˜c‚İ‚Ì‹­‚³
+        public const double SecondStageGainMin = 2.0;
+        public const double SecondStageGainRange = 1.6;
+
+        // ‚í‚¸‚©‚È”ñ‘ÎÌ«‚ğ‰Á‚¦‚é
+        public const double SecondStageBias = 0.04;
+
+        // ‘æ2’i‚Ì¬‡—¦
+        // 0.0‚È‚ç–³ŒøA1.0‚È‚ç‘æ2’i‚ÌM†‚Ì‚İ
+        public const double SecondStageMix = 0.70;
+
+        // ====================================
+        // 5. ˜c‚İŒã‚ÌEQ
+        // ====================================
+
+        public const double BodyHz = 180.0;
+        public const double BodyDb = -1.0;
+
+        public const double MidHz = 750.0;
+        public const double MidDb = 2.5;
+
+        // ====================================
+        // 6. FILTER
+        // ====================================
+
+        public const double FilterMinHz = 2400.0;
+        public const double FilterMaxHz = 8500.0;
+
+        // ====================================
+        // 7. Drive˜A“®EQ
+        // ====================================
+
+        public const double DriveBassHz = 180.0;
+        public const double DriveBassBoostDb = 0.25;
+
+        public const double DriveMidHz = 750.0;
+        public const double DriveMidBoostDb = 1.75;
+        public const double DriveMidQ = 0.75;
+
+        // ====================================
+        // 8. o—Í‰¹—Ê
+        // ====================================
+
+        public const double LevelScale = 0.10;
+
+        // ====================================
+        // 9. ‹Œ”Å‚Æ‚ÌŒİŠ·«—p
+        // ˆÈ‰º‚Ì•À—ñ˜c‚İİ’è‚ÍV”Å‚Å‚Í–¢g—p
+        // ====================================
+
+        public const double MidBandHighPassHz = 170;
+        public const double MidBandLowPassHz = 1900;
+        public const double MidClipDriveScale = 1.0;
+        public const double MidClipMix = 0.0;
+        public const double MidClipPostHz = 700;
+        public const double MidClipPostDb = 2.0;
+        public const double MidClipPostQ = 0.80;
+
+        public const double GritSplitHz = 1100;
+        public const double GritGain = 2.0;
+        public const double GritMix = 0.0;
+        public const double GritPostHighPassHz = 850;
+        public const double EdgePreEmphasis = 0.35;
     }
 }
