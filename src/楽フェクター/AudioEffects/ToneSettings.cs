@@ -1,15 +1,13 @@
-
 namespace FXForge.AudioEffects;
 
 public enum DriveKind
 {
-    Sd1,
-    Rat
+    Sd1 = 0,
+    Rat = 1,
+    Ts9 = 2,
+    Bd2 = 3,
+    Ds1 = 4
 }
-
-// ========================================
-// 歪みエフェクト設定
-// ========================================
 
 public sealed record DriveSettings(
     DriveKind Kind,
@@ -18,10 +16,6 @@ public sealed record DriveSettings(
     double Tone,
     double Level
 );
-
-// ========================================
-// アンプ設定
-// ========================================
 
 public sealed record AmpSettings(
     bool Enabled,
@@ -32,10 +26,6 @@ public sealed record AmpSettings(
     double Level
 );
 
-// ========================================
-// 音作り全体の設定
-// ========================================
-
 public sealed record ToneSettings(
     DriveSettings A,
     DriveSettings B,
@@ -45,46 +35,26 @@ public sealed record ToneSettings(
 )
 {
     public static ToneSettings Default { get; } = new(
-        // ========================================
-        // SD-1
-        // ========================================
-        new(
+        new DriveSettings(
             DriveKind.Sd1,
             true,
-            .64,  // DRIVE
-            .52,  // TONE
-            .52   // LEVEL
-        ),
-
-        // ========================================
-        // RAT
-        // ========================================
-        new(
+            .64,
+            .52,
+            .52),
+        new DriveSettings(
             DriveKind.Rat,
             false,
-            .75,  // DRIVE
-            .36,  // FILTER
-            .52   // LEVEL
-        ),
-
-        // エフェクト順序
+            .75,
+            .36,
+            .52),
         false,
-
-        // ========================================
-        // AMP：音量改善
-        // ========================================
-        new(
+        new AmpSettings(
             true,
-            .25,  // GAIN：0.50 → 0.25
-            .50,  // BASS
-            .50,  // MIDDLE
-            .50,  // TREBLE
-            .80   // LEVEL：変更なし
-        ),
-
-        // ========================================
-        // 全体出力
-        // ========================================
+            .25,
+            .50,
+            .50,
+            .50,
+            .80),
         .65
     );
 }

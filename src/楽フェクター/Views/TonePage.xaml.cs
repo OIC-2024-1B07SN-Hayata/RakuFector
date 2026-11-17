@@ -1,241 +1,585 @@
-﻿using FXForge.AudioEffects;
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
+﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using FXForge.Models;
+using System.ComponentModel;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using static FXForge.Common.UiBrushes;
+using FXForge.AudioEffects;
+using FXForge.Models;
 
 namespace FXForge.Views;
 
-public partial class TonePage : UserControl, INotifyPropertyChanged
+public partial class TonePage :
+    UserControl,
+    INotifyPropertyChanged
 {
-    private EffectItem? _selectedEffect;
     private readonly ToneAudioEngine _engine = new();
+
+    // 競合解消時に抜けていたフィールド。
+    private readonly HashSet<EffectParameter> _watched = new();
+    private EffectItem? _selectedEffect;
+
     private bool _applyingPreset;
-    public void ProcessAudioOutput(float[] samples, int sampleRate) => _engine.Process(samples, sampleRate);
-    public void ResetAudio() => _engine.Reset();
-
-    // 画面切替側から音声エンジンへ状態を伝える
-    public void SetTemporaryBypass(bool enabled)
-    {
-        _engine.SetTemporaryBypass(enabled);
-    }
-
-    public void ReceiveAudio(float[] samples, int sampleRate, int channels) { /* 元の入力の受け取り口 */ }
+    private Point _dragStart;
 
     public ObservableCollection<EffectItem> Effects { get; } = new();
 
     public EffectItem? SelectedEffect
     {
         get => _selectedEffect;
+
         set
         {
-            if (_selectedEffect == value) return;
+            if (_selectedEffect == value)
+                return;
+
             _selectedEffect = value;
             OnPropertyChanged();
         }
     }
 
+    public event Action? DisplaySettingsChanged;
+    public event PropertyChangedEventHandler? PropertyChanged;
+
     public TonePage()
     {
         InitializeComponent();
         BuildEffects();
-        SelectedEffect = Effects.FirstOrDefault(e => e.SlotName == "DRIVE A");
+
+        SelectedEffect = Effects.FirstOrDefault(
+            effect => effect.SlotName == "DRIVE A");
+
         DataContext = this;
-        Effects.CollectionChanged += (_, _) => { ObserveParameters(); SynchronizeAudioSettings(); };
+
         foreach (var effect in Effects)
+            effect.PropertyChanged += EffectChanged;
+
+        Effects.CollectionChanged += (_, _) =>
         {
-            effect.PropertyChanged += (_, e) =>
-            {
-                if (e.PropertyName is nameof(EffectItem.IsEnabled) or "ParametersChanged")
-                    SynchronizeAudioSettings();
-            };
-            effect.Parameters.CollectionChanged += (_, _) => { ObserveParameters(); SynchronizeAudioSettings(); };
-        }
+            ObserveParameters();
+            SynchronizeAudioSettings();
+        };
+
         ObserveParameters();
         SynchronizeAudioSettings();
     }
 
-    private void BuildEffects()
+    public void ProcessAudioOutput(
+        float[] samples,
+        int sampleRate)
     {
-        var input = new EffectItem("INPUT", "IN", "Guitar Input", "INPUT", "#27D69B", true, false, false);
-
-        var defaults = ToneSettings.Default;
-        var drivePresets = new[]
-        {
-            new EffectPresetDefinition("SD-1", "SD-1 Style / Prototype", "#E9B21C",
-                new ParameterDefinition("Drive", defaults.A.Drive * 100),
-                new ParameterDefinition("Tone", defaults.A.Tone * 100),
-                new ParameterDefinition("Level", defaults.A.Level * 100)),
-            new EffectPresetDefinition("RAT", "RAT Style / Prototype", "#C85A7A",
-                new ParameterDefinition("Distortion", defaults.B.Drive * 100),
-                new ParameterDefinition("Filter", defaults.B.Tone * 100),
-                new ParameterDefinition("Volume", defaults.B.Level * 100))
-        };
-        var driveA = CreateDriveSlot("DRIVE A", drivePresets, 0);
-        var driveB = CreateDriveSlot("DRIVE B", drivePresets, 1);
-        driveA.IsEnabled = driveB.IsEnabled = false;
-        var amp = new EffectItem("AMP", "AMP", "Generic Guitar Amp / Prototype", "AMP", "#4C8CF5", true);
-        amp.SetFixedParameters(new EffectParameter("Gain", defaults.Amp.Gain * 100), new EffectParameter("Bass", defaults.Amp.Bass * 100),
-            new EffectParameter("Middle", defaults.Amp.Middle * 100), new EffectParameter("Treble", defaults.Amp.Treble * 100), new EffectParameter("Level", defaults.Amp.Level * 100));
-        var output = new EffectItem("OUTPUT", "OUT", "Output Volume", "OUTPUT", "#9AA4B2", true);
-        output.SetFixedParameters(new EffectParameter("Level", defaults.OutputLevel * 100));
-        Effects.Add(input); Effects.Add(driveA); Effects.Add(driveB); Effects.Add(amp); Effects.Add(output);
+        _engine.Process(samples, sampleRate);
     }
 
-    private static EffectItem CreateDriveSlot(string slotName,
-        IEnumerable<EffectPresetDefinition> presets, int selectedIndex)
+    public void ResetAudio()
     {
-        var effect = new EffectItem(slotName, "DRV", "Drive", "DRIVE", "#E9B21C", true, true);
-        foreach (var preset in presets) effect.AvailablePresets.Add(preset);
-        effect.SelectedPreset = effect.AvailablePresets[selectedIndex];
+        _engine.Reset();
+    }
+    public void SetTemporaryBypass(bool enabled)
+    {
+        _engine.SetTemporaryBypass(enabled);
+    }
+    public void ReceiveAudio(
+        float[] samples,
+        int sampleRate,
+        int channels)
+    {
+        // 音作りの本処理はProcessAudioOutputから呼ばれる。
+    }
+
+    private void BuildEffects()
+    {
+        var defaults = ToneSettings.Default;
+
+        var input = new EffectItem(
+            "INPUT",
+            "IN",
+            "Guitar Input",
+            "INPUT",
+            "#27D69B",
+            true,
+            false,
+            false);
+
+        var presets = new[]
+        {
+            new EffectPresetDefinition(
+                "SD-1",
+                "SD-1 Style / Prototype",
+                "#E9B21C",
+                new ParameterDefinition(
+                    "Drive", defaults.A.Drive * 100),
+                new ParameterDefinition(
+                    "Tone", defaults.A.Tone * 100),
+                new ParameterDefinition(
+                    "Level", defaults.A.Level * 100)),
+
+            new EffectPresetDefinition(
+                "RAT",
+                "RAT Style / Prototype",
+                "#C85A7A",
+                new ParameterDefinition(
+                    "Distortion", defaults.B.Drive * 100),
+                new ParameterDefinition(
+                    "Filter", defaults.B.Tone * 100),
+                new ParameterDefinition(
+                    "Volume", defaults.B.Level * 100)),
+
+            new EffectPresetDefinition(
+                "TS9",
+                "TS9 Style / Prototype",
+                "#37B85A",
+                new ParameterDefinition("Drive", 50),
+                new ParameterDefinition("Tone", 50),
+                new ParameterDefinition("Level", 52)),
+
+            new EffectPresetDefinition(
+                "BD-2",
+                "BD-2 Style / Prototype",
+                "#428BE8",
+                new ParameterDefinition("Gain", 45),
+                new ParameterDefinition("Tone", 50),
+                new ParameterDefinition("Level", 52)),
+
+            new EffectPresetDefinition(
+                "DS-1",
+                "DS-1 Style / Prototype",
+                "#F28C28",
+                new ParameterDefinition("Distortion", 45),
+                new ParameterDefinition("Tone", 50),
+                new ParameterDefinition("Level", 52))
+        };
+
+        var driveA = CreateDriveSlot(
+            "DRIVE A", presets, 0);
+
+        var driveB = CreateDriveSlot(
+            "DRIVE B", presets, 1);
+
+        driveA.IsEnabled = false;
+        driveB.IsEnabled = false;
+
+        var amp = new EffectItem(
+            "AMP",
+            "AMP",
+            "Generic Guitar Amp / Prototype",
+            "AMP",
+            "#4C8CF5",
+            true);
+
+        amp.SetFixedParameters(
+            new EffectParameter(
+                "Gain", defaults.Amp.Gain * 100),
+            new EffectParameter(
+                "Bass", defaults.Amp.Bass * 100),
+            new EffectParameter(
+                "Middle", defaults.Amp.Middle * 100),
+            new EffectParameter(
+                "Treble", defaults.Amp.Treble * 100),
+            new EffectParameter(
+                "Level", defaults.Amp.Level * 100));
+
+        var output = new EffectItem(
+            "OUTPUT",
+            "OUT",
+            "Output Volume",
+            "OUTPUT",
+            "#9AA4B2",
+            true);
+
+        output.SetFixedParameters(
+            new EffectParameter(
+                "Level", defaults.OutputLevel * 100));
+
+        Effects.Add(input);
+        Effects.Add(driveA);
+        Effects.Add(driveB);
+        Effects.Add(amp);
+        Effects.Add(output);
+    }
+
+    private static EffectItem CreateDriveSlot(
+        string slotName,
+        IEnumerable<EffectPresetDefinition> presets,
+        int selectedIndex)
+    {
+        var effect = new EffectItem(
+            slotName,
+            "DRV",
+            "Drive",
+            "DRIVE",
+            "#E9B21C",
+            true,
+            true);
+
+        foreach (var preset in presets)
+            effect.AvailablePresets.Add(preset);
+
+        effect.SelectedPreset =
+            effect.AvailablePresets[selectedIndex];
+
         return effect;
     }
 
-    private readonly HashSet<EffectParameter> _watched = new();
+    private void EffectChanged(
+        object? sender,
+        PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == "ParametersChanged")
+        {
+            // ノブ再生成の完了後に同期する。
+            ObserveParameters();
+            SynchronizeAudioSettings();
+        }
+        else if (
+            e.PropertyName == nameof(EffectItem.IsEnabled))
+        {
+            SynchronizeAudioSettings();
+        }
+    }
+
     private void ObserveParameters()
     {
-        var current = Effects.SelectMany(e => e.Parameters).ToHashSet();
-        foreach (var old in _watched.Where(p => !current.Contains(p)).ToArray())
-        { old.PropertyChanged -= ParameterChanged; _watched.Remove(old); }
-        foreach (var parameter in current)
-            if (_watched.Add(parameter)) parameter.PropertyChanged += ParameterChanged;
-    }
-    private void ParameterChanged(object? sender, PropertyChangedEventArgs e)
-    { if (e.PropertyName == nameof(EffectParameter.Value)) SynchronizeAudioSettings(); }
-    public event Action? DisplaySettingsChanged;
+        var current = Effects
+            .SelectMany(effect => effect.Parameters)
+            .ToHashSet();
 
-    private static double Value(EffectItem item, string name) =>
-        (item.Parameters.FirstOrDefault(p => p.Name == name)?.Value ?? 50) / 100.0;
+        foreach (var old in _watched
+                     .Where(parameter => !current.Contains(parameter))
+                     .ToArray())
+        {
+            old.PropertyChanged -= ParameterChanged;
+            _watched.Remove(old);
+        }
+
+        foreach (var parameter in current)
+        {
+            if (_watched.Add(parameter))
+                parameter.PropertyChanged += ParameterChanged;
+        }
+    }
+
+    private void ParameterChanged(
+        object? sender,
+        PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(EffectParameter.Value))
+            SynchronizeAudioSettings();
+    }
+
+    private static double Value(
+        EffectItem effect,
+        string parameterName)
+    {
+        double value = effect.Parameters
+            .FirstOrDefault(
+                parameter => parameter.Name == parameterName)
+            ?.Value ?? 50;
+
+        return DriveStage.Unit(value / 100.0);
+    }
+
+    private static DriveSettings ReadDrive(EffectItem effect)
+    {
+        var mapping = effect.ShortName switch
+        {
+            "SD-1" => (
+                Kind: DriveKind.Sd1,
+                Drive: "Drive",
+                Tone: "Tone",
+                Level: "Level"),
+
+            "RAT" => (
+                Kind: DriveKind.Rat,
+                Drive: "Distortion",
+                Tone: "Filter",
+                Level: "Volume"),
+
+            "TS9" => (
+                Kind: DriveKind.Ts9,
+                Drive: "Drive",
+                Tone: "Tone",
+                Level: "Level"),
+
+            "BD-2" => (
+                Kind: DriveKind.Bd2,
+                Drive: "Gain",
+                Tone: "Tone",
+                Level: "Level"),
+
+            "DS-1" => (
+                Kind: DriveKind.Ds1,
+                Drive: "Distortion",
+                Tone: "Tone",
+                Level: "Level"),
+
+            _ => throw new InvalidOperationException(
+                $"未対応のエフェクト種類です: {effect.ShortName}")
+        };
+
+        return new DriveSettings(
+            mapping.Kind,
+            effect.IsEnabled,
+            Value(effect, mapping.Drive),
+            Value(effect, mapping.Tone),
+            Value(effect, mapping.Level));
+    }
+
     private void SynchronizeAudioSettings()
     {
-        if (_applyingPreset) return;
-        var a = Effects.First(e => e.SlotName == "DRIVE A");
-        var b = Effects.First(e => e.SlotName == "DRIVE B");
-        var amp = Effects.First(e => e.SlotName == "AMP");
-        var output = Effects.First(e => e.SlotName == "OUTPUT");
-        DriveSettings Drive(EffectItem e)
-        {
-            bool rat = e.ShortName == "RAT";
-            return new(rat ? DriveKind.Rat : DriveKind.Sd1, e.IsEnabled,
-                Value(e, rat ? "Distortion" : "Drive"), Value(e, rat ? "Filter" : "Tone"),
-                Value(e, rat ? "Volume" : "Level"));
-        }
-        _engine.SetSettings(new(Drive(a), Drive(b), Effects.IndexOf(b) < Effects.IndexOf(a),
-            new(amp.IsEnabled, Value(amp, "Gain"), Value(amp, "Bass"), Value(amp, "Middle"),
-                Value(amp, "Treble"), Value(amp, "Level")), output.IsEnabled ? Value(output, "Level") : 0));
+        if (_applyingPreset)
+            return;
+
+        var a = Effects.First(
+            effect => effect.SlotName == "DRIVE A");
+
+        var b = Effects.First(
+            effect => effect.SlotName == "DRIVE B");
+
+        var amp = Effects.First(
+            effect => effect.SlotName == "AMP");
+
+        var output = Effects.First(
+            effect => effect.SlotName == "OUTPUT");
+
+        var settings = new ToneSettings(
+            ReadDrive(a),
+            ReadDrive(b),
+            Effects.IndexOf(b) < Effects.IndexOf(a),
+            new AmpSettings(
+                amp.IsEnabled,
+                Value(amp, "Gain"),
+                Value(amp, "Bass"),
+                Value(amp, "Middle"),
+                Value(amp, "Treble"),
+                Value(amp, "Level")),
+            output.IsEnabled
+                ? Value(output, "Level")
+                : 0);
+
+        _engine.SetSettings(settings);
         DisplaySettingsChanged?.Invoke();
     }
 
-    private void QuickPreset_Click(object sender, RoutedEventArgs e)
+    public bool ToggleFootswitchEffect(
+        string slotName,
+        out bool enabled)
     {
-        if (sender is Button { Tag: string mode }) ApplyQuickPreset(mode);
-    }
+        var effect = Effects.FirstOrDefault(
+            item => item.SlotName == slotName);
 
-    // The footswitch can control the same live EffectItem objects that the UI edits.
-    // EffectItem.IsEnabled changes are already subscribed by SynchronizeAudioSettings().
-    public bool ToggleFootswitchEffect(string slotName, out bool enabled)
-    {
-        var effect = Effects.FirstOrDefault(x => x.SlotName == slotName);
         if (effect is null)
         {
             enabled = false;
             return false;
         }
+
         effect.IsEnabled = !effect.IsEnabled;
         enabled = effect.IsEnabled;
+
         return true;
     }
 
-    // Fixed demo sounds (not user-stored patches): 1=raw, 2=amp, 3=SD-1,
-    // 4=RAT, 5=SD-1 + RAT. These update the actual audio chain, not just a label.
     public bool ApplyFootswitchPreset(int number)
     {
         string? mode = number switch
         {
-            1 => "Raw", 2 => "Amp", 3 => "Sd1", 4 => "Rat", 5 => "Stack", _ => null
+            1 => "Raw",
+            2 => "Amp",
+            3 => "Sd1",
+            4 => "Rat",
+            5 => "Stack",
+            _ => null
         };
-        if (mode is null) return false;
+
+        if (mode is null)
+            return false;
+
         ApplyQuickPreset(mode);
         return true;
     }
 
+    private static void ResetDrivePreset(
+        EffectItem effect,
+        string shortName)
+    {
+        var preset = effect.AvailablePresets.First(
+            item => item.ShortName == shortName);
+
+        effect.SelectedPreset = preset;
+
+        foreach (var parameter in effect.Parameters)
+        {
+            parameter.Value = preset.Parameters
+                .First(item => item.Name == parameter.Name)
+                .DefaultValue;
+        }
+    }
+
     private void ApplyQuickPreset(string mode)
     {
-        var a = Effects.First(x => x.SlotName == "DRIVE A");
-        var b = Effects.First(x => x.SlotName == "DRIVE B");
-        var amp = Effects.First(x => x.SlotName == "AMP");
-        var output = Effects.First(x => x.SlotName == "OUTPUT");
+        var a = Effects.First(
+            effect => effect.SlotName == "DRIVE A");
+
+        var b = Effects.First(
+            effect => effect.SlotName == "DRIVE B");
+
+        var amp = Effects.First(
+            effect => effect.SlotName == "AMP");
+
+        var output = Effects.First(
+            effect => effect.SlotName == "OUTPUT");
+
         _applyingPreset = true;
+
         try
         {
-            a.SelectedPreset = a.AvailablePresets.First(p => p.ShortName == "SD-1");
-            b.SelectedPreset = b.AvailablePresets.First(p => p.ShortName == "RAT");
-            foreach (var effect in new[] { a, b })
-                foreach (var parameter in effect.Parameters)
-                    parameter.Value = effect.SelectedPreset!.Parameters.First(p => p.Name == parameter.Name).DefaultValue;
+            ResetDrivePreset(a, "SD-1");
+            ResetDrivePreset(b, "RAT");
+
             a.IsEnabled = mode is "Sd1" or "Stack";
             b.IsEnabled = mode is "Rat" or "Stack";
+
             amp.IsEnabled = mode != "Raw";
             output.IsEnabled = true;
+
             var defaults = ToneSettings.Default;
+
             foreach (var parameter in amp.Parameters)
-                parameter.Value = 100 * (parameter.Name switch
-                {
-                    "Gain" => defaults.Amp.Gain, "Bass" => defaults.Amp.Bass,
-                    "Middle" => defaults.Amp.Middle, "Treble" => defaults.Amp.Treble,
-                    "Level" => defaults.Amp.Level, _ => .5
-                });
-            output.Parameters[0].Value = defaults.OutputLevel * 100;
-            SelectedEffect = mode == "Sd1" || mode == "Stack" ? a : mode == "Rat" ? b : amp;
+            {
+                parameter.Value = 100 *
+                    (parameter.Name switch
+                    {
+                        "Gain" => defaults.Amp.Gain,
+                        "Bass" => defaults.Amp.Bass,
+                        "Middle" => defaults.Amp.Middle,
+                        "Treble" => defaults.Amp.Treble,
+                        "Level" => defaults.Amp.Level,
+                        _ => .5
+                    });
+            }
+
+            output.Parameters[0].Value =
+                defaults.OutputLevel * 100;
+
+            SelectedEffect = mode switch
+            {
+                "Sd1" or "Stack" => a,
+                "Rat" => b,
+                _ => amp
+            };
         }
-        finally { _applyingPreset = false; SynchronizeAudioSettings(); }
+        finally
+        {
+            _applyingPreset = false;
+            ObserveParameters();
+            SynchronizeAudioSettings();
+        }
     }
 
-    private void Help_Click(object sender, RoutedEventArgs e) => MessageBox.Show(
-        "上の『原音 / AMP / SD-1+AMP / RAT+AMP』で音を比較できます。\n" +
-        "チェーンのカードを選択し、ノブを上下ドラッグ・ホイール・矢印キーで調整します。\n" +
-        "ON/OFFとノブの値が音に反映されます。RATのFilterは大きくすると高域が減ります。\n" +
-        "歪みA/Bはドラッグで順序を入れ替えできます。OUTPUTのLevelは全体音量です。\n" +
-        "SD-1は前版RAT程度の歪み、RATはさらに強い歪みとざらつきを狙っています。\n" +
-        "比較用AMPはGain 8。低音弦のブリッジミュートで比べてみてください。\n" +
-        "実機回路の忠実な再現ではなく、AMPは汎用モデルです。\n" +
-        "音が出ないときは⚙の出力設定と『出力テスト』を確認してください。", "音作り");
-    private void EffectButton_Click(object sender, RoutedEventArgs e)
-    { if (sender is Button { Tag: EffectItem effect } && effect.IsEditable) SelectedEffect = effect; }
+    private void Help_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        MessageBox.Show(
+            "DRIVE AまたはDRIVE Bを選択して、\n" +
+            "エフェクト種類を変更できます。\n\n" +
+            "対応機種：SD-1 / RAT / TS9 / BD-2 / DS-1\n\n" +
+            "選択したエフェクトをONにすると音に反映されます。\n" +
+            "ノブは上下ドラッグ、ホイール、矢印キーで調整できます。\n\n" +
+            "RATのFilterは上げるほど暗くなります。\n" +
+            "他の機種のToneは上げるほど明るくなります。\n\n" +
+            "DRIVE A/Bはドラッグで順序を交換できます。\n" +
+            "種類を変更するとノブは初期値に戻ります。\n" +
+            "OUTPUTのLevelは全体の音量です。\n\n" +
+            "ユーザー音色の保存機能はまだありません。",
+            "音作り");
+    }
 
-    private Point _dragStart;
-    private void Effect_MouseDown(object sender, MouseButtonEventArgs e)
-        => _dragStart = e.GetPosition(this);
+    private void EffectButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: EffectItem effect } &&
+            effect.IsEditable)
+        {
+            SelectedEffect = effect;
+        }
+    }
 
-    private void Effect_MouseMove(object sender, MouseEventArgs e)
+    private void Effect_MouseDown(
+        object sender,
+        MouseButtonEventArgs e)
+    {
+        _dragStart = e.GetPosition(this);
+    }
+
+    private void Effect_MouseMove(
+        object sender,
+        MouseEventArgs e)
     {
         if (e.LeftButton != MouseButtonState.Pressed ||
-            sender is not Button { Tag: EffectItem { CanMove: true } effect }) return;
+            sender is not Button
+            {
+                Tag: EffectItem { CanMove: true } effect
+            })
+        {
+            return;
+        }
+
         var position = e.GetPosition(this);
-        if (Math.Abs(position.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
-            Math.Abs(position.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
-        DragDrop.DoDragDrop((Button)sender, effect, DragDropEffects.Move);
+
+        if (Math.Abs(position.X - _dragStart.X)
+                < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(position.Y - _dragStart.Y)
+                < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+
+        DragDrop.DoDragDrop(
+            (Button)sender,
+            effect,
+            DragDropEffects.Move);
+
         e.Handled = true;
     }
 
-    private void Effect_Drop(object sender, DragEventArgs e)
+    private void Effect_Drop(
+        object sender,
+        DragEventArgs e)
     {
-        if (sender is not Button { Tag: EffectItem { CanMove: true } target } ||
-            e.Data.GetData(typeof(EffectItem)) is not EffectItem { CanMove: true } source ||
-            ReferenceEquals(source, target)) return;
-        int from = Effects.IndexOf(source), to = Effects.IndexOf(target);
-        if (from < 0 || to < 0) return;
+        if (sender is not Button
+            {
+                Tag: EffectItem { CanMove: true } target
+            } ||
+            e.Data.GetData(typeof(EffectItem))
+                is not EffectItem { CanMove: true } source ||
+            ReferenceEquals(source, target))
+        {
+            return;
+        }
+
+        int from = Effects.IndexOf(source);
+        int to = Effects.IndexOf(target);
+
+        if (from < 0 || to < 0)
+            return;
+
         Effects.Move(from, to);
         SelectedEffect = source;
+
         e.Handled = true;
     }
 
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    protected virtual void OnPropertyChanged(
+        [CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(propertyName));
+    }
 }
