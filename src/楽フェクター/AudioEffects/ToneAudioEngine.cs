@@ -6,7 +6,8 @@ namespace FXForge.AudioEffects;
 /// <summary>音声スレッド専用。UIには触れず、音作り→8倍FIRダウンサンプル→全体音量。</summary>
 public sealed class ToneAudioEngine
 {
-    private readonly DriveStage _a = new(), _b = new();
+    private readonly SelectableDriveStage _a = new();
+    private readonly SelectableDriveStage _b = new();
     private readonly AmpStage _amp = new();
     private readonly Oversampler8x _resampler = new();
     private ToneSettings _settings = ToneSettings.Default;
