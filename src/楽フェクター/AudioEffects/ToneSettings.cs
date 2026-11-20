@@ -24,7 +24,12 @@ public sealed record AmpSettings(
     double Middle,
     double Treble,
     double Level
-);
+)
+{
+    // 0.5＝中央・補正なし。
+    // 既存コンストラクターとの互換性を維持する。
+    public double High { get; init; } = .50;
+}
 
 public sealed record ToneSettings(
     DriveSettings A,
@@ -54,7 +59,10 @@ public sealed record ToneSettings(
             .50,
             .50,
             .50,
-            .80),
+            .80)
+        {
+            High = .50
+        },
         .65
     );
 }
