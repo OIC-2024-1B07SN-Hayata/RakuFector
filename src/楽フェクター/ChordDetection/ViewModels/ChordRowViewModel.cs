@@ -5,26 +5,35 @@ namespace ChordDetection.App.ViewModels;
 /// <summary>One chord in the timeline.</summary>
 public sealed class ChordRowViewModel
 {
-    /// <summary>Timeline scale (the design shows one second per 174 px).</summary>
-    public const double PixelsPerSecond = 174;
-
     /// <param name="chord">The sounding chord (already transposed).</param>
     /// <param name="name">Its name spelled for the key, e.g. "Bb".</param>
+    /// <param name="degree">Degree shown below the name, e.g. "♭Ⅶ" (ディグリーを表示); empty otherwise.</param>
     /// <param name="shape">Shape to fret with the capo, e.g. "G"; null without a capo.</param>
-    public ChordRowViewModel(DisplayedChord chord, string name, string? shape, string notes)
+    /// <param name="pixelsPerSecond">Timeline scale (タイムラインの幅).</param>
+    public ChordRowViewModel(DisplayedChord chord, string name, string degree, string? shape, string notes, double pixelsPerSecond)
     {
+        PixelsPerSecond = pixelsPerSecond;
         StartSeconds = chord.StartSeconds;
         EndSeconds = chord.EndSeconds;
         Name = name;
+        Degree = degree;
         ShapeText = shape is null ? "" : $"押さえる形 {shape}";
         Notes = notes;
         Color = RootColor(chord.Chord);
     }
 
+    /// <summary>Timeline scale the row was laid out with.</summary>
+    public double PixelsPerSecond { get; }
+
     public double StartSeconds { get; }
     public double EndSeconds { get; }
     /// <summary>Sounding chord name.</summary>
     public string Name { get; }
+
+    /// <summary>Degree below the name, e.g. "Ⅵm"; empty when not shown.</summary>
+    public string Degree { get; }
+
+    public bool HasDegree => Degree.Length > 0;
 
     /// <summary>"押さえる形 G" with a capo; empty without.</summary>
     public string ShapeText { get; }
@@ -40,10 +49,11 @@ public sealed class ChordRowViewModel
     public double Left => StartSeconds * PixelsPerSecond;
 
     /// <summary>Width in the timeline (proportional to duration), with a small gap to the next chord.</summary>
-    public double Width => Math.Max(24, (EndSeconds - StartSeconds) * PixelsPerSecond - 2);
+    public double Width => Math.Max(3, (EndSeconds - StartSeconds) * PixelsPerSecond - 1);
 
     /// <summary>Tooltip: time, detailed-level names and notes.</summary>
-    public string ToolTip => $"{StartText} – {EndText}（{DurationText}）\n音: {Notes}"
+    public string ToolTip => $"{Name}  {StartText} – {EndText}（{DurationText}）\n音: {Notes}"
+        + (HasDegree ? $"\nディグリー {Degree}" : "")
         + (ShapeText.Length > 0 ? $"\n{ShapeText}" : "");
 
     /// <summary>Background colour; the hue follows the root so equal chords look alike.</summary>

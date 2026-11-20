@@ -15,13 +15,30 @@ using ChordDetection.Infrastructure.Separation;
 using CommonAudio;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Geometry = System.Windows.Media.Geometry;
+using Point = System.Windows.Point;
+using StreamGeometry = System.Windows.Media.StreamGeometry;
+using StreamGeometryContext = System.Windows.Media.StreamGeometryContext;
 
 namespace ChordDetection.App.ViewModels;
 
 public sealed record StemOption(string Stem, string Label);
 
+/// <summary>A bar or beat number on the timeline ruler, as in the drum editor ("3" for a bar, "3.2" for its 2nd beat).</summary>
+public sealed record BeatMark(double Left, string Label, bool IsBar);
+
+/// <summary>Fineness of the thin lines between the beats in the timeline.</summary>
+/// <param name="Division">Lines per whole note: 4 = beats only, 16 = sixteenth notes.</param>
+public sealed record LineDivisionOption(int Division, string Label);
+
 /// <summary>One capo position in the capo selector.</summary>
 public sealed record CapoOption(int Value, string Label);
+
+/// <summary>One choice of the timeline width: about <paramref name="Seconds"/> fit without scrolling.</summary>
+public sealed record TimelineZoomOption(double Seconds, string Label);
+
+/// <summary>One choice of the minor-key degree base selector.</summary>
+public sealed record MinorDegreeBaseOption(MinorDegreeBase Base, string Label);
 
 /// <summary>One row of the capo suggestions.</summary>
 /// <param name="Capo">Capo fret applied when the row is clicked.</param>
@@ -57,11 +74,24 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     private readonly Func<int> _sharedSampleRate;
     private readonly DispatcherTimer _playbackTimer = new() { Interval = TimeSpan.FromMilliseconds(30) };
 
+    // Bar-synced recording: the app's tempo (drum editor) and the bars of the current take.
+    private readonly ITempoSource? _tempo;
+    private readonly BarChordQuantizer _barQuantizer = new();
+    private BarGrid? _barGrid;     // null: no bars (files, or recorded without 小節に合わせる)
+    private bool _tempoStarted;    // true while this page runs the metronome / drums for a recording
+
     // Length of the pieces fed to the streaming analysis when no separation is used.
     private const double PieceSeconds = 1.0;
 
-    // The empty timeline still shows this many seconds of ruler.
+    // The empty timeline still shows at least this many seconds of ruler.
     private const double MinTimelineSeconds = 30;
+
+    // Width of the timeline in a 1600 px window; the zoom choices are seconds per this width.
+    private const double TimelineViewWidth = 1020;
+
+    // Candidate seconds between ruler labels; the first one leaving MinRulerLabelSpacing is used.
+    private static readonly int[] RulerLabelSteps = [1, 2, 5, 10, 15, 30, 60];
+    private const double MinRulerLabelSpacing = 64;
     private readonly Stopwatch _recordingClock = new();
 
     private ChordAnalysis? _analysis;
@@ -84,7 +114,8 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         AudioPlayer player,
         CommonAudioInput asio,
         Func<bool> sharedAudioConnected,
-        Func<int> sharedSampleRate)
+        Func<int> sharedSampleRate,
+        ITempoSource? tempo = null)
     {
         _service = service;
         _toneShapedService = toneShapedService;
@@ -98,6 +129,11 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         _asio = asio;
         _sharedAudioConnected = sharedAudioConnected;
         _sharedSampleRate = sharedSampleRate;
+        _tempo = tempo;
+        _selectedLineDivision = LineDivisions[^1];
+        _selectedMinorDegreeBase = MinorDegreeBases[0];
+        _selectedTimelineZoom = TimelineZooms[2]; // about 30 s
+        if (_tempo is not null) _tempo.TempoChanged += OnTempoChanged;
 
         _recorder.LevelChanged += OnRecorderLevel;
         _asio.AudioReceived += OnAsioAudio;
@@ -129,8 +165,43 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         SelectedSampleRate = SampleRates[0];
         SelectedStem = Stems[0];
         SelectedTuning = Tunings[0];
+        ApplySettings(ChordPageSettings.Load());
         RefreshDisplay();
+
+        // Keep the settings for the next run: saved shortly after the last change (a dragged slider saves once).
+        _settingsSaveTimer.Tick += (_, _) => { _settingsSaveTimer.Stop(); CurrentSettings().Save(); };
+        PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is { } name && SavedSettings.Contains(name)) { _settingsSaveTimer.Stop(); _settingsSaveTimer.Start(); }
+        };
     }
+
+    // ---------- settings kept between runs ----------
+
+    private readonly DispatcherTimer _settingsSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+
+    private static readonly IReadOnlySet<string> SavedSettings = new HashSet<string>(StringComparer.Ordinal)
+    {
+        nameof(SelectedTimelineZoom), nameof(ShowDegrees), nameof(SelectedMinorDegreeBase), nameof(SelectedLineDivision),
+    };
+
+    /// <summary>Restores saved settings; values that are no longer offered are left at their defaults.</summary>
+    private void ApplySettings(ChordPageSettings? saved)
+    {
+        if (saved is null) return;
+        SelectedTimelineZoom = TimelineZooms.FirstOrDefault(z => z.Seconds == saved.TimelineSeconds) ?? SelectedTimelineZoom;
+        ShowDegrees = saved.WantsDegrees;
+        SelectedMinorDegreeBase = MinorDegreeBases.FirstOrDefault(b => b.Base == saved.MinorBase) ?? SelectedMinorDegreeBase;
+        SelectedLineDivision = LineDivisions.FirstOrDefault(d => d.Division == saved.LineDivision) ?? SelectedLineDivision;
+    }
+
+    private ChordPageSettings CurrentSettings() => new()
+    {
+        TimelineSeconds = SelectedTimelineZoom?.Seconds ?? 30,
+        ShowDegrees = ShowDegrees,
+        MinorDegreeBase = (SelectedMinorDegreeBase?.Base ?? MinorDegreeBase.RelativeMajor).ToString(),
+        LineDivision = SelectedLineDivision?.Division ?? 32,
+    };
 
     // ---------- bindable state ----------
 
@@ -201,6 +272,248 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     [ObservableProperty] private string _capoSuggestionSourceText = "-";
 
     public string RecordButtonText => IsRecording ? "■  停止して解析" : "●  録音開始";
+
+    // ---------- bars (tempo of the drum editor) ----------
+
+    /// <summary>False when no tempo source is connected (小節に合わせる is then unavailable).</summary>
+    public bool IsTempoAvailable => _tempo is not null;
+
+    /// <summary>
+    /// When true, recording starts the drum editor's pattern (drums / metronome) from bar 1 and plays it until the
+    /// recording stops. Applies to the next recording.
+    /// </summary>
+    [ObservableProperty] private bool _playDrumsWhileRecording;
+
+    /// <summary>
+    /// When true, the chords of the take are also shown bar by bar of the drums (needs
+    /// <see cref="PlayDrumsWhileRecording"/>, which is turned on with it). Applies to the next recording.
+    /// </summary>
+    [ObservableProperty] private bool _syncToBars;
+
+    partial void OnPlayDrumsWhileRecordingChanged(bool value)
+    {
+        if (!value) SyncToBars = false;
+    }
+
+    partial void OnSyncToBarsChanged(bool value)
+    {
+        if (value) PlayDrumsWhileRecording = true;
+        RefreshGridLines(); // the lines appear as soon as 小節に合わせる is chosen
+    }
+
+    /// <summary>"♩=120  4/4" from the drum editor.</summary>
+    public string TempoText => _tempo is null ? "-" : $"♩={_tempo.Bpm}  {_tempo.BeatsPerBar}/4";
+
+    private void OnTempoChanged()
+    {
+        OnPropertyChanged(nameof(TempoText));
+        OnPropertyChanged(nameof(MetronomeEnabled));
+        RefreshGridLines(); // the preview lines follow the drum editor's tempo
+    }
+
+    /// <summary>Metronome click of the drum editor's pattern (same switch as its メトロノーム button).</summary>
+    public bool MetronomeEnabled
+    {
+        get => _tempo?.MetronomeEnabled == true;
+        set
+        {
+            if (_tempo is null || _tempo.MetronomeEnabled == value) return;
+            _tempo.MetronomeEnabled = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Level of the drums, 0–100 %. Can be changed while recording.</summary>
+    public double DrumVolumePercent
+    {
+        get => (_tempo?.DrumVolume ?? 1) * 100;
+        set
+        {
+            if (_tempo is null) return;
+            _tempo.DrumVolume = Math.Clamp(value, 0, 100) / 100;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DrumVolumeText));
+        }
+    }
+
+    public string DrumVolumeText => $"{DrumVolumePercent:0}%";
+
+    /// <summary>Level of the metronome click, 0–100 %. Can be changed while recording.</summary>
+    public double MetronomeVolumePercent
+    {
+        get => (_tempo?.MetronomeVolume ?? 1) * 100;
+        set
+        {
+            if (_tempo is null) return;
+            _tempo.MetronomeVolume = Math.Clamp(value, 0, 100) / 100;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(MetronomeVolumeText));
+        }
+    }
+
+    public string MetronomeVolumeText => $"{MetronomeVolumePercent:0}%";
+
+    /// <summary>Height of the timeline; bar and beat lines run through the ruler down to its bottom.</summary>
+    public const double TimelineHeight = 436;
+
+    /// <summary>Top of the thin lines between the beats: they start as ticks at the bottom of the ruler.</summary>
+    public const double SubdivisionTop = 40;
+
+    /// <summary>Narrowest space for a ruler number (as in the drum editor).</summary>
+    private const double MinLabelSpacing = 48;
+
+    /// <summary>Narrowest space between two beat / grid lines.</summary>
+    private const double MinLineSpacing = 5;
+
+    /// <summary>Bar lines in the timeline; null without bars.</summary>
+    [ObservableProperty] private Geometry? _barLines;
+
+    /// <summary>Beat lines between the bar lines in the timeline; null without bars.</summary>
+    [ObservableProperty] private Geometry? _beatLines;
+
+    /// <summary>Thin lines between the beats (<see cref="SelectedLineDivision"/>); null without bars or with beats only.</summary>
+    [ObservableProperty] private Geometry? _subdivisionLines;
+
+    /// <summary>Bar and beat numbers on the ruler; empty without bars.</summary>
+    [ObservableProperty] private IReadOnlyList<BeatMark> _beatMarks = [];
+
+    public IReadOnlyList<LineDivisionOption> LineDivisions { get; } =
+    [
+        new(4, "拍のみ"),
+        new(8, "8 分音符"),
+        new(16, "16 分音符"),
+        new(32, "32 分音符"),
+    ];
+
+    /// <summary>Fineness of the thin lines in the timeline; can be changed after recording.</summary>
+    [ObservableProperty] private LineDivisionOption? _selectedLineDivision;
+
+    partial void OnSelectedLineDivisionChanged(LineDivisionOption? value) => RefreshGridLines();
+
+    /// <summary>True while the timeline shows bar / beat lines.</summary>
+    [ObservableProperty] private bool _hasGridLines;
+
+    /// <summary>Length of the timeline in seconds (the lines are drawn to its end).</summary>
+    private double _timelineSeconds = MinTimelineSeconds;
+
+    // ---------- timeline width (seconds per screen) ----------
+
+    public IReadOnlyList<TimelineZoomOption> TimelineZooms { get; } =
+    [
+        new(10, "約 10 秒"),
+        new(20, "約 20 秒"),
+        new(30, "約 30 秒"),
+        new(60, "約 1 分"),
+        new(120, "約 2 分"),
+    ];
+
+    /// <summary>How many seconds the timeline shows without scrolling; can be changed at any time.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PixelsPerSecond))]
+    private TimelineZoomOption? _selectedTimelineZoom;
+
+    partial void OnSelectedTimelineZoomChanged(TimelineZoomOption? value)
+    {
+        RefreshDisplay();
+        UpdatePlaybackPosition();
+    }
+
+    /// <summary>Timeline scale from <see cref="SelectedTimelineZoom"/> (30 s → 34 px per second).</summary>
+    public double PixelsPerSecond => TimelineViewWidth / (SelectedTimelineZoom?.Seconds ?? 30);
+
+    /// <summary>Seconds between the labels of the ruler, so that the labels do not overlap.</summary>
+    private int RulerLabelSeconds =>
+        RulerLabelSteps.FirstOrDefault(s => s * PixelsPerSecond >= MinRulerLabelSpacing, RulerLabelSteps[^1]);
+
+    /// <summary>
+    /// Bars drawn in the timeline: those of a take recorded with 小節に合わせる; otherwise, while 小節に合わせる is
+    /// chosen, the drum editor's tempo with bar 1 at 0 s (a guide before / without a synced recording).
+    /// </summary>
+    private BarGrid? DisplayGrid =>
+        _barGrid ?? (SyncToBars && _tempo is not null ? new BarGrid(_tempo.Bpm, _tempo.BeatsPerBar) : null);
+
+    /// <summary>
+    /// Bar lines, beat lines and thin lines between them (as fine as <see cref="SelectedLineDivision"/>) of
+    /// <see cref="DisplayGrid"/> to the end of the timeline, with bar / beat numbers on the ruler like the drum editor.
+    /// </summary>
+    private void RefreshGridLines()
+    {
+        if (DisplayGrid is not { } grid)
+        {
+            BarLines = null;
+            BeatLines = null;
+            SubdivisionLines = null;
+            BeatMarks = [];
+            HasGridLines = false;
+            return;
+        }
+
+        double seconds = _timelineSeconds;
+        double pps = PixelsPerSecond;
+        int perBeat = Math.Max(1, (SelectedLineDivision?.Division ?? 4) / 4);
+        // Too close lines would merge into a grey area: halve the grid until the lines are far enough apart.
+        while (perBeat > 1 && grid.BeatSeconds / perBeat * pps < MinLineSpacing) perBeat /= 2;
+        bool beatLines = grid.BeatSeconds * pps >= MinLineSpacing;
+        int perBar = grid.BeatsPerBar * perBeat;
+        double step = grid.BeatSeconds / perBeat;
+        int steps = grid.BarCount(seconds) * perBar;
+
+        // Numbers as in the drum editor: beats only when there is room, bars thinned out when they are narrow.
+        bool beatLabels = grid.BeatSeconds * pps >= MinLabelSpacing;
+        int barLabelEvery = Math.Max(1, (int)Math.Ceiling(MinLabelSpacing / (grid.BarSeconds * pps)));
+
+        var marks = new List<BeatMark>();
+        var bars = new StreamGeometry();
+        var beats = new StreamGeometry();
+        var subdivisions = new StreamGeometry();
+        using (var barContext = bars.Open())
+        using (var beatContext = beats.Open())
+        using (var subdivisionContext = subdivisions.Open())
+        {
+            for (int i = 0; i <= steps; i++)
+            {
+                double t = grid.OffsetSeconds + i * step;
+                if (t < 0 || t > seconds) continue;
+                double x = t * pps;
+                int bar = i / perBar, beat = i % perBar / perBeat;
+                if (i % perBar == 0)
+                {
+                    AddLine(barContext, x, 0);
+                    if (bar % barLabelEvery == 0)
+                        marks.Add(new BeatMark(x, (bar + 1).ToString(CultureInfo.InvariantCulture), IsBar: true));
+                }
+                else if (i % perBeat == 0)
+                {
+                    if (beatLines) AddLine(beatContext, x, 0);
+                    if (beatLabels) marks.Add(new BeatMark(x, $"{bar + 1}.{beat + 1}", IsBar: false));
+                }
+                else AddLine(subdivisionContext, x, SubdivisionTop);
+            }
+        }
+        bars.Freeze();
+        beats.Freeze();
+        subdivisions.Freeze();
+        BarLines = bars;
+        BeatLines = beats;
+        SubdivisionLines = perBeat > 1 ? subdivisions : null;
+        BeatMarks = marks;
+        HasGridLines = true;
+
+        static void AddLine(StreamGeometryContext context, double x, double top)
+        {
+            context.BeginFigure(new Point(x, top), isFilled: false, isClosed: false);
+            context.LineTo(new Point(x, TimelineHeight), isStroked: true, isSmoothJoin: false);
+        }
+    }
+
+    /// <summary>Chord sheet of the current take, one entry per bar.</summary>
+    public ObservableCollection<BarRowViewModel> Bars { get; } = [];
+
+    /// <summary>True while the chord sheet has bars to show.</summary>
+    [ObservableProperty] private bool _hasBars;
+
+    /// <summary>Tempo of the shown chord sheet, e.g. "♩=120  4/4  ・ 8 小節".</summary>
+    [ObservableProperty] private string _barSheetInfo = "";
 
     /// <summary>Stems of htdemucs_6s that can be analysed after source separation.</summary>
     public IReadOnlyList<StemOption> Stems { get; } =
@@ -340,24 +653,70 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     }
 
     [RelayCommand(CanExecute = nameof(CanStartRecording))]
-    private void StartRecording()
+    private async Task StartRecordingAsync()
     {
         StopPlayback();
+        _barGrid = null;
+        long? barOneTimestamp = null;
+        bool withDrums = (PlayDrumsWhileRecording || SyncToBars) && _tempo is not null;
+        bool withBars = SyncToBars && withDrums;
+        if (withDrums)
+        {
+            // Drums / metronome first: the recording then starts right after bar 1 began.
+            StatusText = "ドラム（メトロノーム）を準備中…";
+            barOneTimestamp = await _tempo!.StartAsync();
+            if (barOneTimestamp is null)
+            {
+                StatusText = "ドラム（メトロノーム）を開始できなかったため、録音しませんでした。";
+                _dialogs.ShowError("ドラム編集のパターンを再生できませんでした。\nドラム編集画面で音源の準備ができているか確認してください。");
+                return;
+            }
+            _tempoStarted = true;
+        }
+
         try
         {
             var path = NewRecordingPath();
             if (UseAsio) StartAsioRecording(path);
             else _recorder.StartFromDevice(SelectedDeviceIndex, path);
             _recordingClock.Restart();
+            if (withBars) _barGrid = NewBarGrid(barOneTimestamp!.Value, Stopwatch.GetTimestamp());
+            RefreshGridLines(); // lines of this take (bar 1 = first bar of the drums)
             IsRecording = true;
             // A new take starts a new song: the capo suggestions use only the chords played from here on.
             ResetChordHistory();
-            StatusText = "録音中…（エフェクトをかける前のドライ音を録音しています）";
+            StatusText = withBars
+                ? $"録音中…（{TempoText} のドラムに合わせて弾いてください。1 小節目はドラムの先頭です）"
+                : withDrums
+                    ? $"録音中…（{TempoText} のドラムを鳴らしています）"
+                    : "録音中…（エフェクトをかける前のドライ音を録音しています）";
         }
         catch (Exception ex)
         {
+            StopTempo();
+            _barGrid = null;
+            RefreshGridLines();
             _dialogs.ShowError($"録音を開始できませんでした。\n{ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Bars of a recording that started at <paramref name="recordingTimestamp"/> while bar 1 began rendering at
+    /// <paramref name="barOneTimestamp"/>. Bar 1 is heard after the drum output latency, so it is that much later
+    /// in the recording; the time between the two starts moves it earlier.
+    /// </summary>
+    private BarGrid NewBarGrid(long barOneTimestamp, long recordingTimestamp)
+    {
+        double startGap = (recordingTimestamp - barOneTimestamp) / (double)Stopwatch.Frequency;
+        return new BarGrid(_tempo!.Bpm, _tempo.BeatsPerBar, _tempo.OutputLatencySeconds - startGap);
+    }
+
+    /// <summary>Stops the drums / metronome if this page started them.</summary>
+    private void StopTempo()
+    {
+        if (!_tempoStarted) return;
+        _tempoStarted = false;
+        _tempo?.Stop();
     }
 
     /// <summary>The shared ASIO input pushes its buffers to the recorder's tap (32-bit float mono WAV).</summary>
@@ -390,7 +749,7 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     private async Task ToggleRecordingAsync()
     {
         if (IsRecording) await StopRecordingAsync();
-        else StartRecording();
+        else await StartRecordingAsync();
     }
 
     /// <summary>Clears the result (and the reference labels) so the next take starts from an empty timeline.</summary>
@@ -399,6 +758,7 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     {
         UnloadPlayback();
         _analysis = null;
+        _barGrid = null;
         _history.Reset(); // the capo suggestions start over as well
         SourceName = "（未選択）";
         SummaryText = "";
@@ -413,6 +773,7 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         {
             // Stop only this tap; Tone and Tuner must keep receiving the shared ASIO stream.
             _recordingWithAsio = false;
+            StopTempo();
             var asioError = _asio.LastError;
             var path = await _recorder.StopAsync();
             _recordingClock.Stop();
@@ -424,6 +785,7 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         catch (Exception ex)
         {
             IsRecording = false;
+            StopTempo();
             _dialogs.ShowError($"録音の停止に失敗しました。\n{ex.Message}");
         }
     }
@@ -479,8 +841,11 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         await AnalyzeOpenedFileAsync(path);
     }
 
-    private Task AnalyzeOpenedFileAsync(string path) =>
-        AnalyzeFileAsync(path, UseSourceSeparation && IsSeparationAvailable ? SelectedStem.Stem : null);
+    private Task AnalyzeOpenedFileAsync(string path)
+    {
+        _barGrid = null; // the tempo of a file is not known (no beat detection yet)
+        return AnalyzeFileAsync(path, UseSourceSeparation && IsSeparationAvailable ? SelectedStem.Stem : null);
+    }
 
     /// <param name="stem">Stem to analyse after Demucs separation; null analyses the file as it is.</param>
     private async Task AnalyzeFileAsync(string path, string? stem = null)
@@ -634,7 +999,7 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     private void UpdatePlaybackPosition()
     {
         double position = _player.PositionSeconds;
-        PlaybackLeft = position * ChordRowViewModel.PixelsPerSecond;
+        PlaybackLeft = position * PixelsPerSecond;
         PlaybackTimeText = HasPlayback ? $"{FormatTime(position)} / {FormatTime(_player.DurationSeconds)}" : "";
     }
 
@@ -647,11 +1012,17 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     {
         Chords.Clear();
         double seconds = _analysis?.DurationSeconds ?? 0;
-        PlayheadLeft = seconds * ChordRowViewModel.PixelsPerSecond;
-        int tickCount = (int)Math.Ceiling(Math.Max(MinTimelineSeconds, seconds + 2));
-        TimelineWidth = tickCount * ChordRowViewModel.PixelsPerSecond;
+        PlayheadLeft = seconds * PixelsPerSecond;
+        // The empty timeline fills the screen: at least one screen of seconds.
+        double minSeconds = Math.Max(MinTimelineSeconds, SelectedTimelineZoom?.Seconds ?? 0);
+        int tickCount = (int)Math.Ceiling(Math.Max(minSeconds, seconds + 2));
+        TimelineWidth = tickCount * PixelsPerSecond;
+        _timelineSeconds = tickCount;
+        RefreshGridLines();
+        int labelEvery = RulerLabelSeconds;
         Ticks = Enumerable.Range(0, tickCount)
-            .Select(s => new TimelineTick(s * ChordRowViewModel.PixelsPerSecond, $"{s / 60:00}:{s % 60:00}"))
+            .Where(s => s % labelEvery == 0)
+            .Select(s => new TimelineTick(s * PixelsPerSecond, $"{s / 60:00}:{s % 60:00}"))
             .ToList();
 
         if (_analysis is null)
@@ -660,6 +1031,7 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
             _keyDecided = false;
             UpdateKeyBadge();
             UpdateCapoSuggestions();
+            RefreshBars([], null);
             UpdatePlaceholder();
             return;
         }
@@ -667,17 +1039,70 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         // N.C. (no chord) is not shown; in the timeline its time is left empty.
         // Shown chords are the sounding ones after transposition; with a capo the shape is shown as well.
         var key = DisplayKey;
+        var soundingChords = new List<DisplayedChord>();
         foreach (var detected in _simplifier.SimplifyTimeline(_analysis.Chords, ShownLevel, alsoShown: AlsoShownTypes).Where(c => !c.Chord.IsNoChord))
         {
             var sounding = detected with { Chord = Transposer.Transpose(detected.Chord, Transpose) };
+            soundingChords.Add(sounding);
             string? shape = Capo > 0 ? NoteSpeller.SharpChordName(Transposer.Shape(sounding.Chord, Capo)) : null;
-            Chords.Add(new ChordRowViewModel(sounding, NoteSpeller.ChordName(sounding.Chord, key), shape, NotesIn(detected, key)));
+            var (main, sub) = Labels(sounding.Chord, key);
+            Chords.Add(new ChordRowViewModel(sounding, main, sub, shape, NotesIn(detected, key), PixelsPerSecond));
         }
         UpdateKeyBadge();
         UpdateCapoSuggestions();
+        RefreshBars(soundingChords, key);
 
         UpdatePlaceholder();
         SummaryText = $"{_analysis.DurationSeconds:0.0} 秒 / 検出した音 {_analysis.Notes.Count} 個 / コード {Chords.Count} 個";
+    }
+
+    /// <summary>
+    /// Chord sheet: one entry per bar of <see cref="_barGrid"/>. A bar that repeats the previous one shows "%".
+    /// </summary>
+    /// <param name="sounding">Shown chords after transposition.</param>
+    private void RefreshBars(IReadOnlyList<DisplayedChord> sounding, MusicKey? key)
+    {
+        Bars.Clear();
+        if (_barGrid is not { } grid || _analysis is null)
+        {
+            BarSheetInfo = "";
+            HasBars = false;
+            return;
+        }
+
+        double seconds = _analysis.DurationSeconds;
+
+        string? previous = null;
+        foreach (var bar in _barQuantizer.Quantize(sounding, grid, seconds))
+        {
+            IReadOnlyList<BarSlotViewModel> slots;
+            string signature, detail;
+            if (bar.IsEmpty)
+            {
+                signature = ChordResult.NoChordName;
+                slots = [new BarSlotViewModel(signature, "", "")];
+                detail = signature;
+            }
+            else
+            {
+                var named = bar.Chords.Select(c =>
+                {
+                    var (main, sub) = Labels(c, key);
+                    return new BarSlotViewModel(main, sub,
+                        Capo > 0 ? $"({NoteSpeller.SharpChordName(Transposer.Shape(c, Capo))})" : "");
+                }).ToList();
+                signature = string.Join(" ", named.Select(n => n.Name));
+                string subs = string.Join(" ", named.Select(n => n.Sub));
+                detail = string.IsNullOrWhiteSpace(subs) ? signature : $"{signature}（{subs}）";
+                slots = signature == previous ? [new BarSlotViewModel("%", "", "")] : named;
+            }
+            Bars.Add(new BarRowViewModel(bar.Number, bar.StartSeconds, slots,
+                $"{bar.Number} 小節目  {FormatTime(bar.StartSeconds)} から\n{detail}"));
+            previous = signature;
+        }
+
+        HasBars = Bars.Count > 0;
+        BarSheetInfo = $"♩={grid.Bpm:0}  {grid.BeatsPerBar}/4  ・ {Bars.Count} 小節";
     }
 
     /// <summary>The estimated key moved by the transposition; null while undecided (names then use #).</summary>
@@ -686,6 +1111,7 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     /// <summary>Shows the key once the whole performance is analysed; intermediate results show none.</summary>
     private void UpdateKeyBadge()
     {
+        OnPropertyChanged(nameof(DegreeHint)); // degrees become available once the key is decided
         IsKeyVisible = _keyDecided;
         if (_key is null || DisplayKey is not { } key)
         {
@@ -697,6 +1123,42 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         bool estimated = _key.ModeFromProfile;
         KeyName = (estimated ? "≈ " : "") + key.Name;
         KeyDetail = $"{key.JapaneseName}{(estimated ? "（推定）" : "")} ・ 平行調 {key.Relative.Name}";
+    }
+
+    // ---------- degrees ----------
+
+    /// <summary>When true, the degree of the estimated key is shown below each chord name (timeline and chord sheet).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DegreeHint))]
+    private bool _showDegrees;
+
+    partial void OnShowDegreesChanged(bool value) => RefreshDisplay();
+
+    /// <summary>Which note is Ⅰ in a minor key; the relative major (default) or the minor tonic.</summary>
+    public IReadOnlyList<MinorDegreeBaseOption> MinorDegreeBases { get; } =
+    [
+        new(MinorDegreeBase.RelativeMajor, "平行調のメジャー（Am = Ⅵm、C = Ⅰ）"),
+        new(MinorDegreeBase.MinorTonic, "マイナーの主音（Am = Ⅰm、C = ♭Ⅲ）"),
+    ];
+
+    [ObservableProperty] private MinorDegreeBaseOption? _selectedMinorDegreeBase;
+
+    partial void OnSelectedMinorDegreeBaseChanged(MinorDegreeBaseOption? value) => RefreshDisplay();
+
+    /// <summary>Note under the degree settings while degrees are wanted but the key is not decided yet.</summary>
+    public string DegreeHint => ShowDegrees && DisplayKey is null
+        ? (_keyDecided ? "キーを判定できなかったため、コード名で表示しています" : "キーが決まると（解析が終わると）ディグリーを表示します")
+        : "";
+
+    /// <summary>
+    /// Label of a sounding chord: its name and the degree below it (empty when degrees are off or the key is not
+    /// decided yet).
+    /// </summary>
+    private (string Main, string Sub) Labels(ChordResult sounding, MusicKey? key)
+    {
+        string name = NoteSpeller.ChordName(sounding, key);
+        if (!ShowDegrees || key is not { } k) return (name, "");
+        return (name, DegreeNamer.Degree(sounding, k, SelectedMinorDegreeBase?.Base ?? MinorDegreeBase.RelativeMajor));
     }
 
     partial void OnTransposeChanged(int value)
@@ -792,8 +1254,12 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
 
     public void Dispose()
     {
+        // A change made just before closing is still waiting for the timer.
+        if (_settingsSaveTimer.IsEnabled) { _settingsSaveTimer.Stop(); CurrentSettings().Save(); }
         _recorder.LevelChanged -= OnRecorderLevel;
         _asio.AudioReceived -= OnAsioAudio;
+        if (_tempo is not null) _tempo.TempoChanged -= OnTempoChanged;
+        StopTempo();
         // MainWindow owns the shared input and disposes it once on application close.
         _player.PlaybackEnded -= OnPlaybackEnded;
         _playbackTimer.Stop();

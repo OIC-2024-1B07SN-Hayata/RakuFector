@@ -23,10 +23,16 @@ public sealed class DrumRenderSource
  float[] volumeTargets=Enumerable.Repeat(1f,InstrumentCatalog.Count).ToArray();
  public void SetTrackVolumes(Pattern p){var targets=new float[InstrumentCatalog.Count];foreach(var t in p.Tracks)targets[(int)t.Instrument]=t.VolumePercent/100f;Volatile.Write(ref volumeTargets,targets);}
  public int EnabledMask=InstrumentCatalog.EnabledMask,SoloMask;public volatile bool Metronome;
+ // Mix levels of the drum tracks and the metronome click (0–1); changes are ramped over 20 ms like the track volumes.
+ float drumGainTarget=1,metronomeGainTarget=1,drumGain=1,metronomeGain=1;
+ public float DrumGain{get=>Volatile.Read(ref drumGainTarget);set=>Volatile.Write(ref drumGainTarget,CheckGain(value));}
+ public float MetronomeGain{get=>Volatile.Read(ref metronomeGainTarget);set=>Volatile.Write(ref metronomeGainTarget,CheckGain(value));}
+ static float CheckGain(float value)=>float.IsFinite(value)&&value>=0&&value<=1?value:throw new ArgumentOutOfRangeException(nameof(value));
+ float Ramp(float current,float target)=>current+Math.Clamp(target-current,-1f/(Rate*.02f),1f/(Rate*.02f));
  public long PositionFrames;
  long revision; public long AppliedRevision;
  public long Publish(Pattern p,int startTick=0,int? endTick=null){var copy=p.Copy();int end=endTick??p.Length;if(startTick<0||end>p.Length||startTick>=end||startTick%(p.BeatsPerBar*960)!=0||end%(p.BeatsPerBar*960)!=0)throw new InvalidDataException("ループ範囲が不正です。");Timing.ValidateRange(copy,startTick,end);SetTrackVolumes(p);long version=Interlocked.Increment(ref revision);Volatile.Write(ref pending,new Snapshot(copy,copy.Notes.Where(n=>n.Tick>=startTick&&n.Tick<end).Select(n=>n with{Tick=Timing.EffectiveTick(copy,n),TimingOffsetTick=0}).OrderBy(n=>n.Tick).ThenBy(n=>n.Instrument).ToArray(),startTick,end,version));return version;}
- public void Start(long frame){origin=frame;loop=-1;PositionFrames=0;var targets=Volatile.Read(ref volumeTargets);for(int i=0;i<trackGains.Length;i++)trackGains[i]=targets[i];foreach(var v in voices){v.Position=v.Samples.Length;v.TailFrames=0;}}
+ public void Start(long frame){origin=frame;loop=-1;PositionFrames=0;var targets=Volatile.Read(ref volumeTargets);for(int i=0;i<trackGains.Length;i++)trackGains[i]=targets[i];drumGain=DrumGain;metronomeGain=MetronomeGain;foreach(var v in voices){v.Position=v.Samples.Length;v.TailFrames=0;}}
  long EventFrame(long loopIndex,int tick)=>origin+(long)Math.Round((loopIndex*(rangeEnd-rangeStart)+(double)tick-rangeStart)*60*Rate/(active.Bpm*960d),MidpointRounding.AwayFromZero);
  public void Preview(Instrument instrument)=>Trigger(instrument,100);
  void Trigger(Instrument inst,int velocity)
@@ -41,7 +47,7 @@ public sealed class DrumRenderSource
   for(int f=0;f<frames;f++)
   {
    long frame=start+f;
-   var targets=Volatile.Read(ref volumeTargets);for(int i=0;i<trackGains.Length;i++){float difference=targets[i]-trackGains[i];trackGains[i]+=Math.Clamp(difference,-1f/(Rate*.02f),1f/(Rate*.02f));}
+   var targets=Volatile.Read(ref volumeTargets);for(int i=0;i<trackGains.Length;i++){float difference=targets[i]-trackGains[i];trackGains[i]+=Math.Clamp(difference,-1f/(Rate*.02f),1f/(Rate*.02f));}drumGain=Ramp(drumGain,Volatile.Read(ref drumGainTarget));metronomeGain=Ramp(metronomeGain,Volatile.Read(ref metronomeGainTarget));
    if(playing){if(loop<0||frame>=EventFrame(loop+1,rangeStart)){loop++;var snapshot=Volatile.Read(ref pending);active=snapshot.Pattern;events=snapshot.Notes;Volatile.Write(ref AppliedRevision,snapshot.Revision);rangeStart=snapshot.Start;rangeEnd=snapshot.End;noteIndex=0;beatIndex=rangeStart/960;}
     int mask=Volatile.Read(ref EnabledMask),solo=Volatile.Read(ref SoloMask);if(solo!=0)mask&=solo;
     while(noteIndex<events.Length&&EventFrame(loop,events[noteIndex].Tick)<=frame){var n=events[noteIndex++];bool closed=false;if(n.Instrument==Instrument.OpenHH&&(mask&4)!=0){for(int j=noteIndex-2;j>=0&&events[j].Tick==n.Tick;j--)if(events[j].Instrument==Instrument.HiHat){closed=true;break;}}if(!closed&&(mask&(1<<(int)n.Instrument))!=0)Trigger(n.Instrument,n.Velocity);}
@@ -49,7 +55,7 @@ public sealed class DrumRenderSource
     PositionFrames=frame-EventFrame(loop,rangeStart);
     foreach(var v in voices)if((int)v.Instrument<InstrumentCatalog.Count&&(mask&(1<<(int)v.Instrument))==0&&v.Position<v.Samples.Length/2&&v.Fade==0)v.Fade=v.FadeTotal=longFade;
    }
-   float left=0,right=0;foreach(var v in voices){if(v.TailFrames>0&&v.TailPosition<v.Tail.Length/2){float tailGain=v.TailGain*v.TailFrames/(float)shortFade*((int)v.TailInstrument<InstrumentCatalog.Count?trackGains[(int)v.TailInstrument]:1);left+=v.Tail[v.TailPosition*2]*tailGain;right+=v.Tail[v.TailPosition*2+1]*tailGain;v.TailPosition++;v.TailFrames--;}if(v.Position>=v.Samples.Length/2)continue;float gain=v.Gain*((int)v.Instrument<InstrumentCatalog.Count?trackGains[(int)v.Instrument]:1);if(v.Fade>0){gain*=v.Fade/(float)v.FadeTotal;if(--v.Fade==0){v.Position=v.Samples.Length;continue;}}left+=v.Samples[v.Position*2]*gain;right+=v.Samples[v.Position*2+1]*gain;v.Position++;}output[f*2]+=left;output[f*2+1]+=right;
+   float left=0,right=0;foreach(var v in voices){if(v.TailFrames>0&&v.TailPosition<v.Tail.Length/2){float tailGain=v.TailGain*v.TailFrames/(float)shortFade*((int)v.TailInstrument<InstrumentCatalog.Count?trackGains[(int)v.TailInstrument]*drumGain:metronomeGain);left+=v.Tail[v.TailPosition*2]*tailGain;right+=v.Tail[v.TailPosition*2+1]*tailGain;v.TailPosition++;v.TailFrames--;}if(v.Position>=v.Samples.Length/2)continue;float gain=v.Gain*((int)v.Instrument<InstrumentCatalog.Count?trackGains[(int)v.Instrument]*drumGain:metronomeGain);if(v.Fade>0){gain*=v.Fade/(float)v.FadeTotal;if(--v.Fade==0){v.Position=v.Samples.Length;continue;}}left+=v.Samples[v.Position*2]*gain;right+=v.Samples[v.Position*2+1]*gain;v.Position++;}output[f*2]+=left;output[f*2+1]+=right;
   }
  }
  public void FadeStop(){foreach(var v in voices){if(v.Position<v.Samples.Length/2)v.Fade=v.FadeTotal=longFade;v.TailFrames=0;}PositionFrames=0;}

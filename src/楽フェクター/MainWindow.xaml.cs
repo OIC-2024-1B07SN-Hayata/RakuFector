@@ -31,7 +31,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        _chord = new ChordPage(_audio, () => _connected, () => _preferences?.Rate ?? 0);
+        _chord = new ChordPage(_audio, () => _connected, () => _preferences?.Rate ?? 0, new DrumTempoSource(_drum));
         // 表示倍率が高いPCでも、出力状態の表示が画面外へはみ出さないようにします。
         var workArea = SystemParameters.WorkArea;
         MinWidth = Math.Min(MinWidth, workArea.Width);

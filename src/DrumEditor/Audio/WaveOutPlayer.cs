@@ -65,6 +65,10 @@ public sealed class DrumAudio : IDisposable
     }
     public void SetTrackVolumes(Pattern p) => source.SetTrackVolumes(p);
     public void Solo(int mask) => source.SoloMask = mask;
+    /// <summary>Level of the drum tracks (0–1), on top of <see cref="Volume"/>.</summary>
+    public float DrumGain { get => source.DrumGain; set => source.DrumGain = value; }
+    /// <summary>Level of the metronome click (0–1), on top of <see cref="Volume"/>.</summary>
+    public float MetronomeGain { get => source.MetronomeGain; set => source.MetronomeGain = value; }
 
     public DrumAudio(SampleKit kit)
     {
