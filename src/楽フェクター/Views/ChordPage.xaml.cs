@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Threading;
 using ChordDetection.App.Services;
 using ChordDetection.App.ViewModels;
 using ChordDetection.Core;
@@ -32,7 +33,7 @@ public partial class ChordPage : UserControl, IDisposable
 
     public bool IsRecording => _viewModel?.IsRecording == true;
 
-    public ChordPage(CommonAudioInput audio, Func<bool> audioConnected, Func<int> sampleRate)
+    public ChordPage(CommonAudioInput audio, Func<bool> audioConnected, Func<int> sampleRate, ITempoSource? tempo = null)
     {
         InitializeComponent();
 
@@ -61,10 +62,12 @@ public partial class ChordPage : UserControl, IDisposable
                 new AudioPlayer(),
                 audio,
                 audioConnected,
-                sampleRate);
+                sampleRate,
+                tempo);
 
             DataContext = _viewModel;
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            _shownPixelsPerSecond = _viewModel.PixelsPerSecond;
         }
         catch (Exception ex)
         {
@@ -99,6 +102,12 @@ public partial class ChordPage : UserControl, IDisposable
             vm.PlayFrom(row.StartSeconds);
     }
 
+    private void OnBarClicked(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: BarRowViewModel bar } && _viewModel is { } vm)
+            vm.PlayFrom(Math.Max(0, bar.StartSeconds));
+    }
+
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (sender is not ChordDetectionViewModel vm) return;
@@ -112,6 +121,11 @@ public partial class ChordPage : UserControl, IDisposable
             FollowPlayback(vm);
             return;
         }
+        if (e.PropertyName == nameof(ChordDetectionViewModel.PixelsPerSecond))
+        {
+            KeepViewCentre(vm.PixelsPerSecond);
+            return;
+        }
         if (e.PropertyName != nameof(ChordDetectionViewModel.PlayheadLeft)) return;
         if (vm.PlayheadLeft == 0)
         {
@@ -121,6 +135,21 @@ public partial class ChordPage : UserControl, IDisposable
         double target = vm.PlayheadLeft - TimelineScroll.ViewportWidth * .8;
         if (target > TimelineScroll.HorizontalOffset)
             TimelineScroll.ScrollToHorizontalOffset(target);
+    }
+
+    private double _shownPixelsPerSecond;
+
+    /// <summary>After a change of タイムラインの幅, keeps the second that was in the middle of the view in the middle.</summary>
+    private void KeepViewCentre(double pixelsPerSecond)
+    {
+        double previous = _shownPixelsPerSecond;
+        _shownPixelsPerSecond = pixelsPerSecond;
+        if (previous <= 0) return;
+        double width = TimelineScroll.ViewportWidth;
+        double centreSeconds = (TimelineScroll.HorizontalOffset + width / 2) / previous;
+        // After the layout of the new width (and after the playhead follow-up of the same refresh).
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+            TimelineScroll.ScrollToHorizontalOffset(Math.Max(0, centreSeconds * pixelsPerSecond - width / 2))));
     }
 
     private void FollowPlayback(ChordDetectionViewModel vm)

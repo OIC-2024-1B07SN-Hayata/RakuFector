@@ -326,6 +326,25 @@
                                         <Slider Minimum="0" Maximum="30" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding InputGainDb}" ToolTip="ギターの音が小さいときに上げます（録音中も変更可）"/>
                                     </StackPanel>
 
+                                    <!-- 小節に合わせる: records to the drum editor's pattern and shows a chord sheet bar by bar -->
+                                    <CheckBox Style="{StaticResource SettingCheckBox}" Margin="0,18,0,0" Content="録音中にドラムを鳴らす" IsChecked="{Binding PlayDrumsWhileRecording}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsTempoAvailable, Converter={StaticResource BoolToVisibility}}" ToolTip="録音開始と同時にドラム編集のパターン（ドラム・メトロノーム）を先頭から鳴らし、録音を止めると止めます"/>
+                                    <CheckBox Style="{StaticResource SettingCheckBox}" Margin="0,10,0,0" Content="小節に合わせる（コード譜を作る）" IsChecked="{Binding SyncToBars}" IsEnabled="{Binding IsIdle}" Visibility="{Binding IsTempoAvailable, Converter={StaticResource BoolToVisibility}}" ToolTip="録音中に鳴らすドラムの BPM・拍子で、小節ごとのコード譜を作ります（ドラムも鳴らします）"/>
+                                    <TextBlock Margin="0,6,0,0" FontSize="13" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" Visibility="{Binding PlayDrumsWhileRecording, Converter={StaticResource BoolToVisibility}}">
+                                        <Run Text="{Binding TempoText, Mode=OneWay}" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondary}"/><Run Text="  ドラム編集の BPM・拍子で鳴らします"/>
+                                    </TextBlock>
+                                    <StackPanel Margin="0,10,0,0" Visibility="{Binding HasGridLines, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock Text="タイムラインの細かい線" FontSize="13" Margin="0,0,0,4" Foreground="{DynamicResource TextMuted}"/>
+                                        <ComboBox Style="{StaticResource ThemedComboBox}" ItemsSource="{Binding LineDivisions}" SelectedItem="{Binding SelectedLineDivision}" DisplayMemberPath="Label" ToolTip="拍の間に引く薄い縦線の細かさ（録音後も変更できます）"/>
+                                    </StackPanel>
+                                    <!-- Drum / metronome levels (shared with the drum editor; can be changed while recording) -->
+                                    <StackPanel Margin="0,4,0,0" Visibility="{Binding PlayDrumsWhileRecording, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock FontSize="13" Margin="0,4,0,2" Foreground="{DynamicResource TextMuted}"><Run Text="ドラム音量  "/><Run Text="{Binding DrumVolumeText, Mode=OneWay}"/></TextBlock>
+                                        <Slider Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding DrumVolumePercent}" ToolTip="録音中に鳴らすドラムの音量（録音中も変更可・ドラム編集の再生にも反映）"/>
+                                        <CheckBox Style="{StaticResource SettingCheckBox}" Margin="0,10,0,0" Content="メトロノームを鳴らす" IsChecked="{Binding MetronomeEnabled}" ToolTip="1 拍ごとにクリックを鳴らします（ドラム編集のメトロノームボタンと同じ設定）"/>
+                                        <TextBlock FontSize="13" Margin="0,6,0,2" Foreground="{DynamicResource TextMuted}"><Run Text="メトロノーム音量  "/><Run Text="{Binding MetronomeVolumeText, Mode=OneWay}"/></TextBlock>
+                                        <Slider Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding MetronomeVolumePercent}" IsEnabled="{Binding MetronomeEnabled}" ToolTip="メトロノームのクリックの音量（録音中も変更可・ドラム編集の再生にも反映）"/>
+                                    </StackPanel>
+
                                     <Button Margin="0,22,0,0" Style="{StaticResource RecordButton}" Content="{Binding RecordButtonText}" Command="{Binding ToggleRecordingCommand}"/>
                                     <Button Margin="0,12,0,0" Style="{StaticResource FlatButton}" Command="{Binding OpenAudioFileCommand}" ToolTip="WAV / MP3 / M4A / AAC / WMA / FLAC を開いて解析します（タイムラインへのドラッグ＆ドロップでも開けます）">
                                         <StackPanel Orientation="Horizontal">
@@ -365,6 +384,18 @@
 
                                     <TextBlock Text="カポ（フレット）" FontSize="18" Margin="0,20,0,12" Foreground="{DynamicResource TextPrimary}"/>
                                     <ComboBox Style="{StaticResource ThemedComboBox}" ItemsSource="{Binding CapoOptions}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Capo}" ToolTip="カポを付けると、タイムラインに「押さえる形」も表示します"/>
+
+                                    <!-- Degrees of the estimated key (Ⅰ, Ⅵm …) below the chord names -->
+                                    <CheckBox Style="{StaticResource SettingCheckBox}" Margin="0,20,0,0" Content="ディグリーを表示（コード名の下）" IsChecked="{Binding ShowDegrees}" ToolTip="推定したキー（移調後）を基準に、タイムラインとコード譜のコード名の下にディグリーを表示します"/>
+                                    <StackPanel Margin="0,10,0,0" Visibility="{Binding ShowDegrees, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock Text="マイナーキーの基準" FontSize="13" Margin="0,0,0,4" Foreground="{DynamicResource TextMuted}"/>
+                                        <ComboBox Style="{StaticResource ThemedComboBox}" ItemsSource="{Binding MinorDegreeBases}" SelectedItem="{Binding SelectedMinorDegreeBase}" DisplayMemberPath="Label" ToolTip="マイナーキーの曲で、どの音を Ⅰ にするか（メジャーキーの曲では表示は変わりません）"/>
+                                        <TextBlock Margin="0,6,0,0" FontSize="13" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" Text="{Binding DegreeHint}"/>
+                                    </StackPanel>
+
+                                    <!-- Timeline scale: seconds shown without scrolling -->
+                                    <TextBlock Text="タイムラインの幅" FontSize="18" Margin="0,20,0,12" Foreground="{DynamicResource TextPrimary}"/>
+                                    <ComboBox Style="{StaticResource ThemedComboBox}" ItemsSource="{Binding TimelineZooms}" SelectedItem="{Binding SelectedTimelineZoom}" DisplayMemberPath="Label" ToolTip="スクロールせずに見える秒数（ウィンドウ幅 1600 のとき）。短くするとコード名が読みやすく、長くすると全体を見渡せます"/>
 
                                     <DockPanel Margin="0,22,0,6">
                                         <TextBlock Text="カポ位置の提案" FontSize="18" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}"/>
@@ -424,8 +455,13 @@
                     </TabControl>
                 </Border>
 
+                <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
                 <!-- Timeline -->
-                <Border Grid.Column="2" Style="{StaticResource Card}" ClipToBounds="True" VerticalAlignment="Top">
+                <Border Grid.Row="0" Style="{StaticResource Card}" ClipToBounds="True" VerticalAlignment="Top">
                     <DockPanel>
                         <!-- Header: title and the key of the whole performance (shown once the analysis has finished). -->
                         <Grid DockPanel.Dock="Top" Height="48" Margin="20,12,20,0">
@@ -476,14 +512,45 @@
                                     </ItemsControl.ItemContainerStyle>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type vm:TimelineTick}">
+                                            <!-- With bar lines the ruler shows bar / beat numbers on top and the seconds smaller below them. -->
                                             <Canvas>
-                                                <TextBlock Canvas.Left="6" Canvas.Top="12" Text="{Binding Label}" FontSize="15" Foreground="{DynamicResource TextMuted}"/>
-                                                <Rectangle Canvas.Top="40" Width="1.5" Height="12" Fill="{DynamicResource TextMuted}"/>
+                                                <TextBlock Canvas.Left="6" Text="{Binding Label}" Foreground="{DynamicResource TextMuted}">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Canvas.Top" Value="12"/>
+                                                            <Setter Property="FontSize" Value="15"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding DataContext.HasGridLines, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="True">
+                                                                    <Setter Property="Canvas.Top" Value="33"/>
+                                                                    <Setter Property="FontSize" Value="11"/>
+                                                                    <Setter Property="Opacity" Value="0.8"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                                <Rectangle Canvas.Top="40" Width="1.5" Height="12" Fill="{DynamicResource TextMuted}">
+                                                    <Rectangle.Style>
+                                                        <Style TargetType="Rectangle">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding DataContext.HasGridLines, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Rectangle.Style>
+                                                </Rectangle>
                                             </Canvas>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <Rectangle Grid.Row="0" Height="1" VerticalAlignment="Bottom" Fill="{DynamicResource CardBorder}"/>
+
+                                <!-- Bar / beat / grid lines (小節に合わせる), styled after the drum editor: bars strongest, beats lighter,
+                                     the thin grid lines start as ticks at the bottom of the ruler. Drawn before the chords so they stay behind them. Bar 1 is the first bar of the drums. -->
+                                <Path Grid.RowSpan="3" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Data="{Binding SubdivisionLines}" Stroke="{DynamicResource TextMuted}" StrokeThickness="1" Opacity="0.28"/>
+                                <Path Grid.RowSpan="3" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Data="{Binding BeatLines}" Stroke="{DynamicResource TextMuted}" StrokeThickness="1.5" Opacity="0.6"/>
+                                <Path Grid.RowSpan="3" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Data="{Binding BarLines}" Stroke="{DynamicResource TextSecondary}" StrokeThickness="2.5" Opacity="0.9"/>
 
                                 <!-- Chords: position and width follow time -->
                                 <ItemsControl Grid.Row="1" ItemsSource="{Binding Chords}" Margin="0,16,0,8">
@@ -500,7 +567,9 @@
                                             <Border Width="{Binding Width}" Height="150" Background="{Binding Color}" CornerRadius="6" Padding="12,10" ToolTip="{Binding ToolTip}" Cursor="Hand" MouseLeftButtonUp="OnChordClicked">
                                                 <StackPanel>
                                                     <TextBlock Text="{Binding Name}" Foreground="White" FontSize="30" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock Text="{Binding StartText}" Foreground="#E0FFFFFF" FontSize="13" Margin="0,4,0,0"/>
+                                                    <!-- コード名＋ディグリー: the degree below the name -->
+                                                    <TextBlock Text="{Binding Degree}" Foreground="#F0FFFFFF" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Visibility="{Binding HasDegree, Converter={StaticResource BoolToVisibility}}"/>
+                                                    <TextBlock Text="{Binding StartText}" Foreground="#E0FFFFFF" FontSize="13" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
                                                     <!-- With a capo: the shape to fret -->
                                                     <TextBlock Text="{Binding ShapeText}" Foreground="White" FontSize="15" FontWeight="SemiBold" Margin="0,10,0,0" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
@@ -529,6 +598,41 @@
                                 <!-- Lane divider -->
                                 <Line Grid.Row="2" X1="0" X2="{Binding TimelineWidth}" Y1="0" Y2="0" VerticalAlignment="Top" Stroke="{DynamicResource TimelineGrid}" StrokeThickness="1.5" StrokeDashArray="2 3"/>
 
+                                <!-- Bar / beat numbers on the ruler: "3" for a bar, "3.2" for its beats (as in the drum editor) -->
+                                <ItemsControl Grid.Row="0" ItemsSource="{Binding BeatMarks}" IsHitTestVisible="False">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><Canvas/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemContainerStyle>
+                                        <Style TargetType="ContentPresenter">
+                                            <Setter Property="Canvas.Left" Value="{Binding Left}"/>
+                                        </Style>
+                                    </ItemsControl.ItemContainerStyle>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:BeatMark}">
+                                            <Canvas>
+                                                <TextBlock Canvas.Left="6" Text="{Binding Label}">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Canvas.Top" Value="7"/>
+                                                            <Setter Property="FontSize" Value="15"/>
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextMuted}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsBar}" Value="True">
+                                                                    <Setter Property="Canvas.Top" Value="3"/>
+                                                                    <Setter Property="FontSize" Value="20"/>
+                                                                    <Setter Property="FontWeight" Value="Bold"/>
+                                                                    <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Canvas>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
                                 <!-- Playhead: end of the audio analysed so far -->
                                 <Canvas Grid.RowSpan="3" IsHitTestVisible="False">
                                     <Rectangle Canvas.Left="{Binding PlayheadLeft}" Width="2" Height="436" Fill="{DynamicResource Playhead}"/>
@@ -542,6 +646,50 @@
                         </ScrollViewer>
                     </DockPanel>
                 </Border>
+
+                <!-- Chord sheet: one cell per bar (shown for takes recorded with 小節に合わせる) -->
+                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,16,0,0" ClipToBounds="True" Visibility="{Binding HasBars, Converter={StaticResource BoolToVisibility}}">
+                    <DockPanel>
+                        <Grid DockPanel.Dock="Top" Height="40" Margin="20,10,20,4">
+                            <TextBlock Text="コード譜（小節ごと）" Style="{StaticResource CardTitle}" VerticalAlignment="Center"/>
+                            <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" Text="{Binding BarSheetInfo}" FontSize="14" Foreground="{DynamicResource TextMuted}"/>
+                        </Grid>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="20,0,20,14">
+                            <ItemsControl ItemsSource="{Binding Bars}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><UniformGrid Columns="4" VerticalAlignment="Top"/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:BarRowViewModel}">
+                                        <Border MinHeight="76" BorderBrush="{DynamicResource CardBorder}" BorderThickness="2,0,0,1" Padding="10,4,8,6" Background="Transparent" Cursor="Hand" ToolTip="{Binding ToolTip}" MouseLeftButtonUp="OnBarClicked">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Top" Text="{Binding Number}" FontSize="12" Foreground="{DynamicResource TextMuted}"/>
+                                                <ItemsControl ItemsSource="{Binding Slots}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate DataType="{x:Type vm:BarSlotViewModel}">
+                                                            <StackPanel VerticalAlignment="Bottom">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="{Binding Name}" FontSize="26" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" TextTrimming="CharacterEllipsis"/>
+                                                                    <TextBlock Text="{Binding ShapeText}" FontSize="13" Margin="6,0,0,5" VerticalAlignment="Bottom" Foreground="{DynamicResource TextSecondary}"/>
+                                                                </StackPanel>
+                                                                <!-- コード名＋ディグリー: the degree below the name -->
+                                                                <TextBlock Text="{Binding Sub}" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" Visibility="{Binding HasSub, Converter={StaticResource BoolToVisibility}}"/>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </DockPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </DockPanel>
+                </Border>
+                </Grid>
 
                 <!-- Hint in the middle of the empty timeline (outside the ScrollViewer so it stays centred). -->
                 <TextBlock Grid.Column="2" Text="{Binding PlaceholderText}" FontSize="18" IsHitTestVisible="False" Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,346,0,0"/>

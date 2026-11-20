@@ -113,7 +113,7 @@ public partial class DrumEditorView : UserControl
             var kit = await Task.Run(() => SampleKitLoader.Load(kitDirectory));
             var replacement = await Task.Run(() => new DrumAudio(kit));
             preparedKit=kit;var previous = audio; audio = replacement;
-            audio.Volume = (float)(OutputVolume.Value / 100); ApplyLoopToAudio(); audio.Publish(P); audio.Solo(solo);
+            audio.Volume = (float)(OutputVolume.Value / 100); audio.DrumGain = (float)drumVolume; audio.MetronomeGain = (float)metronomeVolume; ApplyLoopToAudio(); audio.Publish(P); audio.Solo(solo);
             if (previous != null) await Task.Run(previous.Dispose);
             Hint.Text = "13音色のWAVを準備しました · 楽器名をクリックして試聴できます。";
         }
@@ -178,6 +178,7 @@ public partial class DrumEditorView : UserControl
         }
         finally { refreshing = false; }
         UpdateTransport();
+        NotifyTempo();
     }
     void UpdateTransport()
     {
@@ -389,6 +390,95 @@ public partial class DrumEditorView : UserControl
     public string EditorTitle { get; private set; } = "ドラム編集";
     public event Action<string>? NavigationRequested;
     public event Action<string>? EditorTitleChanged;
+
+    // ---------- tempo shared with other pages (chord detection records bar by bar) ----------
+
+    /// <summary>Tempo of the current pattern.</summary>
+    public int Bpm => P.Bpm;
+
+    /// <summary>Quarter-note beats per bar of the current pattern (3–6).</summary>
+    public int BeatsPerBar => P.BeatsPerBar;
+
+    /// <summary>Grid of the editor in notes per whole note (4, 8 or 16): 16 shows sixteenth-note lines.</summary>
+    public int GridDivision => P.GridDivision;
+
+    /// <summary>Metronome click of the pattern (the editor's メトロノーム button).</summary>
+    public bool MetronomeEnabled
+    {
+        get => P.MetronomeEnabled;
+        set { if (P.MetronomeEnabled != value) Change(p => p.MetronomeEnabled = value); }
+    }
+
+    double drumVolume = 1, metronomeVolume = 1;
+
+    /// <summary>Level of the drum tracks (0–1), on top of 全体音量. Kept while the app runs.</summary>
+    public double DrumVolume
+    {
+        get => drumVolume;
+        set { drumVolume = Math.Clamp(value, 0, 1); if (audio != null) audio.DrumGain = (float)drumVolume; }
+    }
+
+    /// <summary>Level of the metronome click (0–1), on top of 全体音量. Kept while the app runs.</summary>
+    public double MetronomeVolume
+    {
+        get => metronomeVolume;
+        set { metronomeVolume = Math.Clamp(value, 0, 1); if (audio != null) audio.MetronomeGain = (float)metronomeVolume; }
+    }
+
+    /// <summary>
+    /// Raised on the UI thread when <see cref="Bpm"/>, <see cref="BeatsPerBar"/>, <see cref="GridDivision"/> or
+    /// <see cref="MetronomeEnabled"/> changes.
+    /// </summary>
+    public event Action? TempoChanged;
+
+    /// <summary>
+    /// Time from the start of rendering until the sound leaves the speaker (the waveOut buffers queued in front).
+    /// The device latency itself is unknown and not included.
+    /// </summary>
+    public static double OutputLatencySeconds => DrumAudio.BufferCount * DrumAudio.BufferMilliseconds / 1000.0;
+
+    (int Bpm, int BeatsPerBar, int GridDivision, bool Metronome) publishedTempo;
+    void NotifyTempo()
+    {
+        var tempo = (P.Bpm, P.BeatsPerBar, P.GridDivision, P.MetronomeEnabled);
+        if (tempo == publishedTempo) return;
+        publishedTempo = tempo;
+        TempoChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Plays the pattern (drums / metronome as set in the editor) from the start of its loop, restarting it
+    /// when it is already playing. Prepares the drum sounds first if this page was never opened.
+    /// </summary>
+    /// <returns><see cref="Stopwatch"/> timestamp at which rendering of bar 1 began; null when playback could not start.</returns>
+    public async Task<long?> StartTransportAsync()
+    {
+        if (!await WaitUntil(() => !preparingAudio, 10000) || busy) return null;
+        if (audio?.Connected != true) await PrepareAudio();
+        if (audio?.Connected != true) return null;
+        if (IsPlaying)
+        {
+            Stop(this, new RoutedEventArgs());
+            if (!await WaitUntil(() => audio.Playing == false, 1000)) return null;
+        }
+        Play(this, new RoutedEventArgs());
+        if (!await WaitUntil(() => audio.Playing, 2000)) return null;
+        return Stopwatch.GetTimestamp();
+    }
+
+    /// <summary>Stops playback started by <see cref="StartTransportAsync"/> (or by the editor).</summary>
+    public void StopTransport() { if (IsPlaying) Stop(this, new RoutedEventArgs()); }
+
+    static async Task<bool> WaitUntil(Func<bool> condition, int timeoutMilliseconds)
+    {
+        var clock = Stopwatch.StartNew();
+        while (!condition())
+        {
+            if (clock.ElapsedMilliseconds > timeoutMilliseconds) return false;
+            await Task.Delay(2);
+        }
+        return true;
+    }
 
     public async Task<bool> CanCloseAsync()
     {
