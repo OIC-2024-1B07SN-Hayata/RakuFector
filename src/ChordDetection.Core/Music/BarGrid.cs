@@ -35,6 +35,20 @@ public sealed record BarGrid
     /// <summary>Zero-based index of the bar that contains <paramref name="seconds"/> (negative before bar 1).</summary>
     public int BarIndexAt(double seconds) => (int)Math.Floor((seconds - OffsetSeconds) / BarSeconds);
 
+    /// <summary>Start of the bar line (also before bar 1) nearest to <paramref name="seconds"/>.</summary>
+    public double NearestBarStart(double seconds) => NearestLine(seconds, 1);
+
+    /// <summary>
+    /// Nearest of <paramref name="linesPerBar"/> evenly spaced lines per bar (1 = bar lines, <see cref="BeatsPerBar"/> = beats),
+    /// also before bar 1.
+    /// </summary>
+    public double NearestLine(double seconds, int linesPerBar)
+    {
+        if (linesPerBar < 1) throw new ArgumentOutOfRangeException(nameof(linesPerBar), linesPerBar, "At least one line per bar.");
+        double step = BarSeconds / linesPerBar;
+        return OffsetSeconds + Math.Round((seconds - OffsetSeconds) / step, MidpointRounding.AwayFromZero) * step;
+    }
+
     /// <summary>Number of bars (from bar 1) needed to cover audio of <paramref name="durationSeconds"/>.</summary>
     public int BarCount(double durationSeconds) =>
         durationSeconds <= OffsetSeconds ? 0 : (int)Math.Ceiling((durationSeconds - OffsetSeconds) / BarSeconds);

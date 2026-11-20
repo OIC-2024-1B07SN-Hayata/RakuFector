@@ -362,6 +362,16 @@
                                         <Button Grid.Column="2" Style="{StaticResource FlatButton}" Content="■  停止" Command="{Binding StopPlaybackCommand}" ToolTip="停止して先頭に戻ります"/>
                                     </Grid>
                                     <TextBlock Text="{Binding PlaybackTimeText}" FontSize="15" Margin="0,6,0,0" HorizontalAlignment="Center" Foreground="{DynamicResource TextSecondary}"/>
+                                    <Grid Margin="0,10,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="12"/>
+                                            <ColumnDefinition Width="96"/>
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox Grid.Column="0" Style="{StaticResource SettingCheckBox}" VerticalAlignment="Center" Content="区間ループ" IsChecked="{Binding IsLoopEnabled}" IsEnabled="{Binding HasLoop}" ToolTip="タイムライン上部の目盛りをドラッグした区間を繰り返し再生します（小節線があるときは、タイムラインに表示されている線に合わせます）"/>
+                                        <Button Grid.Column="2" Style="{StaticResource FlatButton}" Content="解除" Command="{Binding ClearLoopCommand}" ToolTip="ループ区間を消します"/>
+                                    </Grid>
+                                    <TextBlock Text="{Binding LoopText}" FontSize="13" Margin="0,4,0,0" HorizontalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource TextMuted}"/>
                                     <Button Margin="0,12,0,0" Style="{StaticResource FlatButton}" Content="クリア" Command="{Binding ClearCommand}"/>
                                 </StackPanel>
                             </ScrollViewer>
@@ -492,7 +502,9 @@
                             </TextBlock>
                         </StackPanel>
 
-                        <ScrollViewer x:Name="TimelineScroll" HorizontalScrollBarVisibility="Visible" VerticalScrollBarVisibility="Disabled">
+                        <ScrollViewer x:Name="TimelineScroll" HorizontalScrollBarVisibility="Visible" VerticalScrollBarVisibility="Disabled"
+                                      PreviewMouseWheel="OnTimelineMouseWheel" PreviewMouseLeftButtonDown="OnTimelinePanDown"
+                                      PreviewMouseMove="OnTimelinePanMove" PreviewMouseLeftButtonUp="OnTimelinePanUp" LostMouseCapture="OnTimelinePanLostCapture">
                             <Grid Width="{Binding TimelineWidth}" Height="436" HorizontalAlignment="Left">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="52"/>
@@ -551,6 +563,23 @@
                                 <Path Grid.RowSpan="3" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Data="{Binding SubdivisionLines}" Stroke="{DynamicResource TextMuted}" StrokeThickness="1" Opacity="0.28"/>
                                 <Path Grid.RowSpan="3" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Data="{Binding BeatLines}" Stroke="{DynamicResource TextMuted}" StrokeThickness="1.5" Opacity="0.6"/>
                                 <Path Grid.RowSpan="3" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Data="{Binding BarLines}" Stroke="{DynamicResource TextSecondary}" StrokeThickness="2.5" Opacity="0.9"/>
+
+                                <!-- Loop range (dragged on the ruler): a light band over the lanes, stronger in the ruler; faded while the loop is off -->
+                                <Canvas Grid.RowSpan="3" IsHitTestVisible="False" Visibility="{Binding HasLoop, Converter={StaticResource BoolToVisibility}}">
+                                    <Canvas.Style>
+                                        <Style TargetType="Canvas">
+                                            <Setter Property="Opacity" Value="0.35"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsLoopEnabled}" Value="True">
+                                                    <Setter Property="Opacity" Value="1"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Canvas.Style>
+                                    <Rectangle Canvas.Left="{Binding LoopLeft}" Width="{Binding LoopWidth}" Height="436" Fill="{DynamicResource Playhead}" Opacity="0.12"/>
+                                    <Rectangle Canvas.Left="{Binding LoopLeft}" Width="{Binding LoopWidth}" Height="52" Fill="{DynamicResource Playhead}" Opacity="0.35"/>
+                                    <Border Canvas.Left="{Binding LoopLeft}" Width="{Binding LoopWidth}" Height="436" BorderBrush="{DynamicResource Playhead}" BorderThickness="2,0,2,0"/>
+                                </Canvas>
 
                                 <!-- Chords: position and width follow time -->
                                 <ItemsControl Grid.Row="1" ItemsSource="{Binding Chords}" Margin="0,16,0,8">
@@ -642,6 +671,13 @@
                                 <Canvas Grid.RowSpan="3" IsHitTestVisible="False" Visibility="{Binding HasPlayback, Converter={StaticResource BoolToVisibility}}">
                                     <Rectangle Canvas.Left="{Binding PlaybackLeft}" Width="3" Height="436" Fill="{DynamicResource TextPrimary}"/>
                                 </Canvas>
+
+                                <!-- Ruler hit area: drag to choose the loop range, drag its ends to change it, click to move the playback there -->
+                                <Border x:Name="LoopRuler" Grid.Row="0" Background="Transparent" Cursor="IBeam"
+                                        IsEnabled="{Binding HasPlayback}"
+                                        ToolTip="ドラッグでループ区間を指定（端をドラッグで調整・クリックでその位置へ移動）"
+                                        MouseLeftButtonDown="OnLoopRulerMouseDown" MouseMove="OnLoopRulerMouseMove"
+                                        MouseLeftButtonUp="OnLoopRulerMouseUp" LostMouseCapture="OnLoopRulerLostCapture"/>
                             </Grid>
                         </ScrollViewer>
                     </DockPanel>

@@ -436,8 +436,25 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     /// Bar lines, beat lines and thin lines between them (as fine as <see cref="SelectedLineDivision"/>) of
     /// <see cref="DisplayGrid"/> to the end of the timeline, with bar / beat numbers on the ruler like the drum editor.
     /// </summary>
+    /// <summary>
+    /// Lines per beat drawn in the timeline: <see cref="SelectedLineDivision"/>, halved while the lines would be closer
+    /// than <see cref="MinLineSpacing"/> (they would merge into a grey area).
+    /// </summary>
+    private int LinesPerBeat(BarGrid grid)
+    {
+        double pps = PixelsPerSecond;
+        int perBeat = Math.Max(1, (SelectedLineDivision?.Division ?? 4) / 4);
+        while (perBeat > 1 && grid.BeatSeconds / perBeat * pps < MinLineSpacing) perBeat /= 2;
+        return perBeat;
+    }
+
+    /// <summary>Lines per bar visible in the timeline: bars, beats and the thin lines (only bars when beats are too close).</summary>
+    private int VisibleLinesPerBar(BarGrid grid) =>
+        grid.BeatSeconds * PixelsPerSecond >= MinLineSpacing ? grid.BeatsPerBar * LinesPerBeat(grid) : 1;
+
     private void RefreshGridLines()
     {
+        UpdateLoopDisplay(); // its text names bars while there are bar lines
         if (DisplayGrid is not { } grid)
         {
             BarLines = null;
@@ -450,9 +467,7 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
 
         double seconds = _timelineSeconds;
         double pps = PixelsPerSecond;
-        int perBeat = Math.Max(1, (SelectedLineDivision?.Division ?? 4) / 4);
-        // Too close lines would merge into a grey area: halve the grid until the lines are far enough apart.
-        while (perBeat > 1 && grid.BeatSeconds / perBeat * pps < MinLineSpacing) perBeat /= 2;
+        int perBeat = LinesPerBeat(grid);
         bool beatLines = grid.BeatSeconds * pps >= MinLineSpacing;
         int perBar = grid.BeatsPerBar * perBeat;
         double step = grid.BeatSeconds / perBeat;
@@ -974,6 +989,7 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     {
         _player.Load(audio);
         HasPlayback = true;
+        ResetLoop();
         SetPlaying(false);
     }
 
@@ -981,7 +997,95 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     {
         _player.Unload();
         HasPlayback = false;
+        ResetLoop();
         SetPlaying(false);
+    }
+
+    // ---------- loop (dragged on the ruler) ----------
+
+    private double _loopStart, _loopEnd; // kept while the loop is switched off
+
+    /// <summary>True while a loop range is chosen (shown as a band in the timeline).</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ClearLoopCommand))]
+    private bool _hasLoop;
+
+    /// <summary>When true, playback repeats the loop range; switching off keeps the range.</summary>
+    [ObservableProperty] private bool _isLoopEnabled;
+
+    [ObservableProperty] private double _loopLeft;
+    [ObservableProperty] private double _loopWidth;
+
+    /// <summary>"0:12 – 0:20" (with bars "小節 3 – 6"); a hint while no loop is chosen.</summary>
+    [ObservableProperty] private string _loopText = "ルーラーをドラッグして区間を指定";
+
+    partial void OnIsLoopEnabledChanged(bool value) => ApplyLoopToPlayer();
+
+    /// <summary>
+    /// Time under the pointer for the loop ends: with bar lines the nearest line visible in the timeline (bar, beat or
+    /// thin line of 線の細かさ, so it follows the zoom), otherwise as it is; always inside the audio.
+    /// </summary>
+    public double SnapLoopTime(double seconds)
+    {
+        if (DisplayGrid is { } grid) seconds = grid.NearestLine(seconds, VisibleLinesPerBar(grid));
+        return Math.Clamp(seconds, 0, _player.DurationSeconds);
+    }
+
+    /// <summary>Shows the range being dragged without touching the playback (no device restarts while dragging).</summary>
+    public void PreviewLoop(double a, double b)
+    {
+        if (!HasPlayback) return;
+        (_loopStart, _loopEnd) = (Math.Min(a, b), Math.Max(a, b));
+        HasLoop = _loopEnd - _loopStart >= AudioPlayer.MinLoopSeconds;
+        UpdateLoopDisplay();
+    }
+
+    /// <summary>Sets the loop range (in either order) and switches the loop on; too short a range clears it.</summary>
+    public void SetLoop(double a, double b)
+    {
+        if (!HasPlayback) return;
+        PreviewLoop(a, b);
+        if (!HasLoop)
+        {
+            ResetLoop();
+            return;
+        }
+        if (IsLoopEnabled) ApplyLoopToPlayer();
+        else IsLoopEnabled = true; // applied by OnIsLoopEnabledChanged
+    }
+
+    /// <summary>Start / end of the chosen loop in seconds; null without a loop (for dragging its ends).</summary>
+    public (double Start, double End)? LoopRange => HasLoop ? (_loopStart, _loopEnd) : null;
+
+    [RelayCommand(CanExecute = nameof(HasLoop))]
+    private void ClearLoop() => ResetLoop();
+
+    private void ResetLoop()
+    {
+        _loopStart = _loopEnd = 0;
+        HasLoop = false;
+        IsLoopEnabled = false;
+        ApplyLoopToPlayer();
+        UpdateLoopDisplay();
+    }
+
+    private void ApplyLoopToPlayer()
+    {
+        if (!_player.IsLoaded) return;
+        if (IsLoopEnabled && HasLoop) _player.SetLoop(_loopStart, _loopEnd);
+        else _player.ClearLoop();
+        UpdatePlaybackPosition();
+    }
+
+    private void UpdateLoopDisplay()
+    {
+        double pps = PixelsPerSecond;
+        LoopLeft = _loopStart * pps;
+        LoopWidth = HasLoop ? (_loopEnd - _loopStart) * pps : 0;
+        LoopText = !HasLoop ? "ルーラーをドラッグして区間を指定"
+            : DisplayGrid is { } grid
+                ? $"小節 {grid.BarIndexAt(_loopStart + 1e-6) + 1} – {grid.BarIndexAt(_loopEnd - 1e-6) + 1}（{FormatTime(_loopStart)} – {FormatTime(_loopEnd)}）"
+                : $"{FormatTime(_loopStart)} – {FormatTime(_loopEnd)}";
     }
 
     private void OnPlaybackEnded(object? sender, EventArgs e) => SetPlaying(false);
