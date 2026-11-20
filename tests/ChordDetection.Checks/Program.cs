@@ -22,6 +22,13 @@ Check(grid.BarCount(7) == 4 && grid.BarCount(8) == 4 && grid.BarCount(0) == 0, "
 var shifted = new BarGrid(90, 3, 0.08);
 Check(Math.Abs(shifted.BarSeconds - 2) < 1e-9 && Math.Abs(shifted.BarStart(1) - 2.08) < 1e-9, "offset and 3/4");
 Check(Throws(() => new BarGrid(0, 4)) && Throws(() => new BarGrid(120, 0)), "invalid tempo rejected");
+Check(grid.NearestBarStart(2.9) == 2 && grid.NearestBarStart(3.1) == 4 && grid.NearestBarStart(0.4) == 0, "nearest bar line");
+Check(Math.Abs(shifted.NearestBarStart(1.5) - 2.08) < 1e-9 && Math.Abs(shifted.NearestBarStart(0.5) - 0.08) < 1e-9, "nearest bar line with offset");
+Check(Math.Abs(new BarGrid(120, 4, 0.5).NearestBarStart(-0.6) - (-1.5)) < 1e-9, "nearest bar line before bar 1");
+Check(grid.NearestLine(1.2, 4) == 1.0 && grid.NearestLine(1.3, 4) == 1.5, "nearest beat");
+Check(grid.NearestLine(0.13, 16) == 0.125 && grid.NearestLine(0.06, 16) == 0, "nearest 16th note");
+Check(Math.Abs(new BarGrid(120, 4, 0.1).NearestLine(1.2, 4) - 1.1) < 1e-9, "nearest beat with offset");
+Check(Throws(() => grid.NearestLine(1, 0)), "no lines rejected");
 
 // ---------- BarChordQuantizer ----------
 var q = new BarChordQuantizer();
