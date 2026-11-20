@@ -17,11 +17,9 @@ public partial class TonePage :
     INotifyPropertyChanged
 {
     private readonly ToneAudioEngine _engine = new();
-
-    // 競合解消時に抜けていたフィールド。
     private readonly HashSet<EffectParameter> _watched = new();
-    private EffectItem? _selectedEffect;
 
+    private EffectItem? _selectedEffect;
     private bool _applyingPreset;
     private Point _dragStart;
 
@@ -30,7 +28,6 @@ public partial class TonePage :
     public EffectItem? SelectedEffect
     {
         get => _selectedEffect;
-
         set
         {
             if (_selectedEffect == value)
@@ -67,9 +64,7 @@ public partial class TonePage :
         SynchronizeAudioSettings();
     }
 
-    public void ProcessAudioOutput(
-        float[] samples,
-        int sampleRate)
+    public void ProcessAudioOutput(float[] samples, int sampleRate)
     {
         _engine.Process(samples, sampleRate);
     }
@@ -78,16 +73,18 @@ public partial class TonePage :
     {
         _engine.Reset();
     }
+
     public void SetTemporaryBypass(bool enabled)
     {
         _engine.SetTemporaryBypass(enabled);
     }
+
     public void ReceiveAudio(
         float[] samples,
         int sampleRate,
         int channels)
     {
-        // 音作りの本処理はProcessAudioOutputから呼ばれる。
+        // 音作りはProcessAudioOutputで処理する。
     }
 
     private void BuildEffects()
@@ -153,11 +150,8 @@ public partial class TonePage :
                 new ParameterDefinition("Level", 52))
         };
 
-        var driveA = CreateDriveSlot(
-            "DRIVE A", presets, 0);
-
-        var driveB = CreateDriveSlot(
-            "DRIVE B", presets, 1);
+        var driveA = CreateDriveSlot("DRIVE A", presets, 0);
+        var driveB = CreateDriveSlot("DRIVE B", presets, 1);
 
         driveA.IsEnabled = false;
         driveB.IsEnabled = false;
@@ -165,7 +159,7 @@ public partial class TonePage :
         var amp = new EffectItem(
             "AMP",
             "AMP",
-            "Generic Guitar Amp / Prototype",
+            "Clean Amp / Treble & High",
             "AMP",
             "#4C8CF5",
             true);
@@ -179,6 +173,8 @@ public partial class TonePage :
                 "Middle", defaults.Amp.Middle * 100),
             new EffectParameter(
                 "Treble", defaults.Amp.Treble * 100),
+            new EffectParameter(
+                "High", defaults.Amp.High * 100),
             new EffectParameter(
                 "Level", defaults.Amp.Level * 100));
 
@@ -230,12 +226,10 @@ public partial class TonePage :
     {
         if (e.PropertyName == "ParametersChanged")
         {
-            // ノブ再生成の完了後に同期する。
             ObserveParameters();
             SynchronizeAudioSettings();
         }
-        else if (
-            e.PropertyName == nameof(EffectItem.IsEnabled))
+        else if (e.PropertyName == nameof(EffectItem.IsEnabled))
         {
             SynchronizeAudioSettings();
         }
@@ -275,8 +269,7 @@ public partial class TonePage :
         string parameterName)
     {
         double value = effect.Parameters
-            .FirstOrDefault(
-                parameter => parameter.Name == parameterName)
+            .FirstOrDefault(parameter => parameter.Name == parameterName)
             ?.Value ?? 50;
 
         return DriveStage.Unit(value / 100.0);
@@ -345,17 +338,22 @@ public partial class TonePage :
         var output = Effects.First(
             effect => effect.SlotName == "OUTPUT");
 
+        var ampSettings = new AmpSettings(
+            amp.IsEnabled,
+            Value(amp, "Gain"),
+            Value(amp, "Bass"),
+            Value(amp, "Middle"),
+            Value(amp, "Treble"),
+            Value(amp, "Level"))
+        {
+            High = Value(amp, "High")
+        };
+
         var settings = new ToneSettings(
             ReadDrive(a),
             ReadDrive(b),
             Effects.IndexOf(b) < Effects.IndexOf(a),
-            new AmpSettings(
-                amp.IsEnabled,
-                Value(amp, "Gain"),
-                Value(amp, "Bass"),
-                Value(amp, "Middle"),
-                Value(amp, "Treble"),
-                Value(amp, "Level")),
+            ampSettings,
             output.IsEnabled
                 ? Value(output, "Level")
                 : 0);
@@ -457,6 +455,7 @@ public partial class TonePage :
                         "Bass" => defaults.Amp.Bass,
                         "Middle" => defaults.Amp.Middle,
                         "Treble" => defaults.Amp.Treble,
+                        "High" => defaults.Amp.High,
                         "Level" => defaults.Amp.Level,
                         _ => .5
                     });
@@ -492,10 +491,13 @@ public partial class TonePage :
             "ノブは上下ドラッグ、ホイール、矢印キーで調整できます。\n\n" +
             "RATのFilterは上げるほど暗くなります。\n" +
             "他の機種のToneは上げるほど明るくなります。\n\n" +
+            "AMPのTrebleは3.2kHzを基準に高域を調整します。\n" +
+            "AMPのHighは6kHz付近の高域を調整します。\n" +
+            "どちらも50が補正なしの位置です。\n\n" +
             "DRIVE A/Bはドラッグで順序を交換できます。\n" +
             "種類を変更するとノブは初期値に戻ります。\n" +
             "OUTPUTのLevelは全体の音量です。\n\n" +
-            "ユーザー音色の保存機能はまだありません。",
+            "ユーザー音色のDB保存・読込はまだ接続していません。",
             "音作り");
     }
 

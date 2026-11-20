@@ -19,6 +19,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.33" />
   </ItemGroup>
   <!-- Visual Studio Solution Explorer: keep editable code-behind nested under each XAML page. -->
   <ItemGroup>

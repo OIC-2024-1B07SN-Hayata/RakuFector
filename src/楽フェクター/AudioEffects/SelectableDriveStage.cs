@@ -5,6 +5,7 @@ namespace FXForge.AudioEffects;
 /// <summary>
 /// SD-1 / RATは既存DriveStageを使用。
 /// TS9 / BD-2 / DS-1は本クラスで処理する。
+/// 音声スレッドからのみ使用する。
 /// </summary>
 internal sealed class SelectableDriveStage
 {
@@ -20,10 +21,8 @@ internal sealed class SelectableDriveStage
     private readonly Biquad _dc = new();
     private readonly Biquad _toneLowPass = new();
 
-    // BD-2 / DS-1の高域調整。
     private readonly Biquad _presence = new();
 
-    // DS-1用の並列Tone。
     private readonly Biquad _dsToneLow = new();
     private readonly Biquad _dsToneHigh = new();
     private readonly Biquad _dsOutputLowPass = new();
@@ -48,6 +47,12 @@ internal sealed class SelectableDriveStage
 
     private double _toneMix = .5;
     private double _toneMixTarget = .5;
+
+    // BD-2専用。
+    // Toneが高いときに第2段の割合を下げ、
+    // 第1段と原音の割合を増やす。
+    private double _bdTone;
+    private double _bdToneTarget;
 
     private static bool IsExisting(DriveKind kind)
     {
@@ -101,7 +106,7 @@ internal sealed class SelectableDriveStage
 
         _kind = settings.Kind;
 
-        // SD-1 / RATは既存の処理をそのまま使用。
+        // SD-1 / RATの確定済み処理は変更しない。
         if (IsExisting(_kind))
         {
             _existing.Configure(settings, rate);
@@ -121,8 +126,8 @@ internal sealed class SelectableDriveStage
 
         _secondGainTarget = 1;
         _toneMixTarget = .5;
+        _bdToneTarget = 0;
 
-        // 既存の音量基準を維持。
         double referenceLevel = DriveVoicing.Rat.LevelScale;
 
         _dc.HighPass(rate, 18);
@@ -130,152 +135,169 @@ internal sealed class SelectableDriveStage
         switch (_kind)
         {
             case DriveKind.Ts9:
-                // ====================================
-                // TS9
-                //
-                // 旧：1.5 + 28 * drive²
-                // 新：1.5 + 18 * drive + 48 * drive²
-                //
-                // 低いDriveでも変化を出し、
-                // 中～高Driveの増幅も強める。
-                // ====================================
+                {
+                    // TS9：現在の設定を維持。
+                    _gainTarget =
+                        1.5 +
+                        18.0 * drive +
+                        48.0 * drive * drive;
 
-                _gainTarget =
-                    1.5 +
-                    18.0 * drive +
-                    48.0 * drive * drive;
+                    _levelTarget =
+                        referenceLevel * .80 * level;
 
-                _levelTarget =
-                    referenceLevel * .80 * level;
+                    _inputHighPass.HighPass(rate, 200);
+                    _inputLowPass.LowPass(rate, 7500);
 
-                _inputHighPass.HighPass(rate, 200);
-                _inputLowPass.LowPass(rate, 7500);
+                    _preMid.Peak(
+                        rate,
+                        720,
+                        2.5,
+                        .8);
 
-                _preMid.Peak(rate, 720, 2.5, .8);
+                    _body.Shelf(
+                        rate,
+                        180,
+                        -1.5,
+                        false);
 
-                _body.Shelf(
-                    rate,
-                    180,
-                    -1.5,
-                    false);
+                    _postMid.Peak(
+                        rate,
+                        850,
+                        2.0,
+                        .75);
 
-                _postMid.Peak(
-                    rate,
-                    850,
-                    2.0,
-                    .75);
+                    _toneLowPass.LowPass(
+                        rate,
+                        LogFrequency(1500, 6500, tone));
 
-                _toneLowPass.LowPass(
-                    rate,
-                    LogFrequency(1500, 6500, tone));
-                break;
+                    break;
+                }
 
             case DriveKind.Bd2:
-                // ====================================
-                // BD-2
-                //
-                // ゲインは維持。
-                // 段間と最終Toneの高域制限を緩め、
-                // 歪み後に高域を持ち上げる。
-                // ====================================
+                {
+                    // BD-2：高Tone時の潰れを抑える。
+                    //
+                    // 高域・プレゼンスの追従は維持するが、
+                    // 増幅量を抑えて後段への入力過多を軽減。
 
-                _gainTarget =
-                    1 + 60 * drive * drive;
+                    double highDb =
+                        4.0 + 4.0 * tone;
 
-                _secondGainTarget =
-                    1 + 3 * drive;
+                    double presenceDb =
+                        2.0 + 2.5 * tone;
 
-                _levelTarget =
-                    referenceLevel * .65 * level;
+                    // 旧：最大15％増加。
+                    // 新：最大3％に抑え、Toneで歪みすぎないようにする。
+                    double toneDriveBoost =
+                        1.0 + .03 * tone;
 
-                _inputHighPass.HighPass(rate, 65);
-                _inputLowPass.LowPass(rate, 11000);
+                    // Toneによる音量増加は最大2％に抑える。
+                    double toneLevelBoost =
+                        1.0 + .02 * tone;
 
-                _preMid.Peak(
-                    rate,
-                    1100,
-                    .5,
-                    .7);
+                    _gainTarget =
+                        (1.0 + 60.0 * drive * drive)
+                        * toneDriveBoost;
 
-                // 8500Hz → 10000Hz。
-                _betweenStages.LowPass(rate, 10000);
+                    // 高Toneでは第2段への増幅を少し下げる。
+                    // Driveによる歪みの調整範囲は残す。
+                    _secondGainTarget =
+                        (1.0 + 3.0 * drive)
+                        * (1.0 - .15 * tone);
 
-                _body.Shelf(
-                    rate,
-                    140,
-                    .5,
-                    false);
+                    _levelTarget =
+                        referenceLevel
+                        * .65
+                        * level
+                        * toneLevelBoost;
 
-                _postMid.Peak(
-                    rate,
-                    900,
-                    -.8,
-                    .8);
+                    _bdToneTarget = tone;
 
-                // 旧：1800～10000Hz
-                // 新：3000～12000Hz
-                _toneLowPass.LowPass(
-                    rate,
-                    LogFrequency(3000, 12000, tone));
+                    _inputHighPass.HighPass(rate, 65);
+                    _inputLowPass.LowPass(rate, 14000);
 
-                // カッティングの輪郭・弦の高域を強調。
-                _presence.Shelf(
-                    rate,
-                    3000,
-                    3.5,
-                    true);
-                break;
+                    _preMid.Peak(
+                        rate,
+                        1100,
+                        .5,
+                        .7);
+
+                    _betweenStages.LowPass(rate, 12000);
+
+                    _body.Shelf(
+                        rate,
+                        140,
+                        .5,
+                        false);
+
+                    // 高音の張りを支える帯域。
+                    _postMid.Peak(
+                        rate,
+                        2800,
+                        presenceDb,
+                        .85);
+
+                    _toneLowPass.LowPass(
+                        rate,
+                        LogFrequency(4500, 14000, tone));
+
+                    _presence.Shelf(
+                        rate,
+                        2500,
+                        highDb,
+                        true);
+
+                    break;
+                }
 
             case DriveKind.Ds1:
-                // ====================================
-                // DS-1
-                //
-                // 歪み量は維持。
-                // 後段の帯域と高域EQで
-                // シャリッとした質感を増やす。
-                // ====================================
+                {
+                    // DS-1：厚みを補う現在の設定を維持。
+                    _gainTarget =
+                        3.0 +
+                        25.0 * drive +
+                        160.0 * drive * drive;
 
-                _gainTarget =
-                    3 + 85 * drive * drive;
+                    _levelTarget =
+                        referenceLevel * 1.20 * level;
 
-                _levelTarget =
-                    referenceLevel * 1.20 * level;
+                    _inputHighPass.HighPass(rate, 75);
+                    _inputLowPass.LowPass(rate, 9500);
 
-                _inputHighPass.HighPass(rate, 100);
-                _inputLowPass.LowPass(rate, 9500);
+                    _preMid.Peak(
+                        rate,
+                        1000,
+                        3.0,
+                        .85);
 
-                _preMid.Peak(
-                    rate,
-                    1000,
-                    3.0,
-                    .85);
+                    _body.Shelf(
+                        rate,
+                        220,
+                        2.0,
+                        false);
 
-                _body.Shelf(
-                    rate,
-                    140,
-                    .8,
-                    false);
+                    _postMid.Peak(
+                        rate,
+                        750,
+                        -1.0,
+                        .8);
 
-                _postMid.Peak(
-                    rate,
-                    750,
-                    -3.0,
-                    .8);
+                    _dsToneLow.LowPass(rate, 1000);
+                    _dsToneHigh.HighPass(rate, 1300);
 
-                _dsToneLow.LowPass(rate, 750);
-                _dsToneHigh.HighPass(rate, 1600);
+                    _dsOutputLowPass.LowPass(rate, 9000);
 
-                // 7000Hz → 9000Hz。
-                _dsOutputLowPass.LowPass(rate, 9000);
+                    _presence.Shelf(
+                        rate,
+                        3200,
+                        3.0,
+                        true);
 
-                _presence.Shelf(
-                    rate,
-                    3200,
-                    3.0,
-                    true);
+                    _toneMixTarget =
+                        .10 + .75 * tone;
 
-                _toneMixTarget = .10 + .80 * tone;
-                break;
+                    break;
+                }
         }
 
         _settings = settings;
@@ -290,7 +312,6 @@ internal sealed class SelectableDriveStage
         if (_settings is null)
             return input;
 
-        // 追加EQなどはSD-1 / RATを通さない。
         if (IsExisting(_kind))
             return _existing.Process(input);
 
@@ -308,6 +329,9 @@ internal sealed class SelectableDriveStage
 
         _toneMix +=
             (_toneMixTarget - _toneMix) * _smooth;
+
+        _bdTone +=
+            (_bdToneTarget - _bdTone) * _smooth;
 
         if (_mixTarget == 0 && _mix < 1e-8)
             return input;
@@ -327,10 +351,10 @@ internal sealed class SelectableDriveStage
                         pre * _gain,
                         .62);
 
-                    // 原音混合率は維持。
                     shaped =
                         clipped * .75 +
                         clean * .25;
+
                     break;
                 }
 
@@ -344,32 +368,48 @@ internal sealed class SelectableDriveStage
                     double secondInput =
                         _betweenStages.Process(first);
 
-                    const double bias = .025;
+                    double secondDriven =
+                        secondInput * _secondGain * 1.25;
 
-                    double second =
-                        AsymmetricSoftClip(
-                            secondInput * _secondGain + bias,
-                            .78,
-                            .66)
-                        - AsymmetricSoftClip(
-                            bias,
-                            .78,
-                            .66);
+                    double second = SoftKnee(
+                        secondDriven,
+                        .68,
+                        .015);
 
-                    // 歪み段と原音の比率は維持。
+                    // Tone 0：
+                    // 第1段35％ / 第2段55％ / 原音10％
+                    //
+                    // Tone 100：
+                    // 第1段45％ / 第2段40％ / 原音15％
+                    //
+                    // 高Toneほど第2段の硬い歪みを減らし、
+                    // ピッキングの強弱と弦の輪郭を残す。
+                    double firstMix =
+                        .35 + .10 * _bdTone;
+
+                    double secondMix =
+                        .55 - .15 * _bdTone;
+
+                    double cleanMix =
+                        .10 + .05 * _bdTone;
+
                     shaped =
-                        first * .42 +
-                        second * .50 +
-                        clean * .08;
+                        first * firstMix +
+                        second * secondMix +
+                        clean * cleanMix;
+
                     break;
                 }
 
             case DriveKind.Ds1:
-                shaped = SoftKnee(
-                    pre * _gain,
-                    .48,
-                    .025);
-                break;
+                {
+                    shaped = SoftKnee(
+                        pre * _gain,
+                        .48,
+                        .025);
+
+                    break;
+                }
 
             default:
                 return input;
@@ -381,23 +421,30 @@ internal sealed class SelectableDriveStage
 
         if (_kind == DriveKind.Ds1)
         {
-            double low = _dsToneLow.Process(wet);
-            double high = _dsToneHigh.Process(wet);
+            double low =
+                _dsToneLow.Process(wet);
+
+            double high =
+                _dsToneHigh.Process(wet);
 
             wet =
                 low * (1 - _toneMix) +
                 high * _toneMix;
 
-            wet = _dsOutputLowPass.Process(wet);
+            wet =
+                _dsOutputLowPass.Process(wet);
         }
         else
         {
-            wet = _toneLowPass.Process(wet);
+            wet =
+                _toneLowPass.Process(wet);
         }
 
-        // BD-2 / DS-1のみ高域EQを適用。
         if (_kind is DriveKind.Bd2 or DriveKind.Ds1)
-            wet = _presence.Process(wet);
+        {
+            wet =
+                _presence.Process(wet);
+        }
 
         wet *= _level;
 
@@ -429,6 +476,8 @@ internal sealed class SelectableDriveStage
         _level = _levelTarget = 0;
         _mix = _mixTarget = 0;
         _toneMix = _toneMixTarget = .5;
+
+        _bdTone = _bdToneTarget = 0;
 
         _settings = null;
         _rate = 0;

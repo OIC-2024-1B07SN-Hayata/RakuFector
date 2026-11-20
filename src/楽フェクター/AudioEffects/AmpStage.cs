@@ -1,27 +1,16 @@
-
 using System;
 
 namespace FXForge.AudioEffects;
 
 /// <summary>
-/// JC-120 inspired CLEAN amp.
-/// JC-120の特徴を参考にした近似モデル。
-/// 実機回路を完全に再現したものではありません。
+/// 既存のクリーンAMPに独立したHIGH調整を追加。
+/// HIGH中央時は従来の信号経路を維持する。
+/// 音声スレッドからのみ使用する。
 /// </summary>
 internal sealed class AmpStage
 {
-    // ========================================
-    // 基本設定
-    // ========================================
-
     public bool BrightEnabled { get; set; } = false;
-
-    // 別のキャビネットIRを使用する場合はfalse
     public bool InternalSpeakerEnabled { get; set; } = true;
-
-    // ========================================
-    // 音作りパラメータ
-    // ========================================
 
     private const double InputHighPassHz = 35.0;
 
@@ -33,22 +22,20 @@ internal sealed class AmpStage
     private const double MiddleRangeDb = 9.0;
     private const double TrebleRangeDb = 10.0;
 
+    // HIGHはTrebleとは別の、より高い帯域を調整。
+    private const double HighHz = 6000.0;
+    private const double HighRangeDb = 6.0;
+    private const double HighQ = .80;
+
     private const double BrightHz = 2400.0;
     private const double BrightBoostDb = 2.8;
 
-    // プリアンプ最大増幅倍率
     private const double MaxPreampGain = 3.8;
 
-    // ★ 音量改善
-    // 以前の2.0から2.5に変更
+    // 現在の実コードの値を維持。
     private const double MaxOutputLevel = 30.0;
 
-    // パラメータ変更時の平滑化時間
-    private const double SmoothTimeSeconds = 0.008;
-
-    // ========================================
-    // スピーカー特性（簡易近似）
-    // ========================================
+    private const double SmoothTimeSeconds = .008;
 
     private const double SpeakerHighPassHz = 70.0;
     private const double SpeakerBassHz = 130.0;
@@ -58,22 +45,18 @@ internal sealed class AmpStage
     private const double SpeakerLowPassHz1 = 7000.0;
     private const double SpeakerLowPassHz2 = 8500.0;
 
-    // ========================================
-    // クリーンヘッドルーム
-    // ========================================
-
     private const double CleanHeadroomKnee = 1.15;
-    private const double CleanHeadroomRange = 0.65;
-
-    // ========================================
-    // フィルター
-    // ========================================
+    private const double CleanHeadroomRange = .65;
 
     private readonly Biquad _inputHighPass = new();
 
     private readonly Biquad _bass = new();
     private readonly Biquad _middle = new();
     private readonly Biquad _treble = new();
+
+    private readonly Biquad _highBoost = new();
+    private readonly Biquad _highCut = new();
+
     private readonly Biquad _bright = new();
 
     private readonly Biquad _speakerHighPass = new();
@@ -83,11 +66,8 @@ internal sealed class AmpStage
     private readonly Biquad _speakerLowPass1 = new();
     private readonly Biquad _speakerLowPass2 = new();
 
-    // ========================================
-    // 内部状態
-    // ========================================
-
     private double _rate;
+    private double _smooth;
 
     private double _gain = 1.0;
     private double _gainTarget = 1.0;
@@ -98,13 +78,14 @@ internal sealed class AmpStage
     private double _mix;
     private double _mixTarget;
 
+    private double _highAmount;
+    private double _highTarget;
+
     private double _brightMix;
     private double _brightTarget;
 
     private double _speakerMix;
     private double _speakerTarget;
-
-    private double _smooth;
 
     private bool _configured;
 
@@ -116,11 +97,8 @@ internal sealed class AmpStage
     private double _lastBass;
     private double _lastMiddle;
     private double _lastTreble;
+    private double _lastHigh;
     private double _lastLevel;
-
-    // ========================================
-    // 状態リセット
-    // ========================================
 
     public void Reset()
     {
@@ -129,6 +107,10 @@ internal sealed class AmpStage
         _bass.Reset();
         _middle.Reset();
         _treble.Reset();
+
+        _highBoost.Reset();
+        _highCut.Reset();
+
         _bright.Reset();
 
         _speakerHighPass.Reset();
@@ -142,18 +124,17 @@ internal sealed class AmpStage
         _level = _levelTarget = 1.0;
 
         _mix = _mixTarget = 0.0;
+        _highAmount = _highTarget = 0.0;
         _brightMix = _brightTarget = 0.0;
         _speakerMix = _speakerTarget = 0.0;
 
         _configured = false;
     }
 
-    // ========================================
-    // アンプ設定
-    // ========================================
-
     public void Configure(AmpSettings settings, double rate)
     {
+        ArgumentNullException.ThrowIfNull(settings);
+
         if (!double.IsFinite(rate) ||
             rate < 8000.0 ||
             rate > 1536000.0)
@@ -165,13 +146,13 @@ internal sealed class AmpStage
         double bass = DriveStage.Unit(settings.Bass);
         double middle = DriveStage.Unit(settings.Middle);
         double treble = DriveStage.Unit(settings.Treble);
+        double high = DriveStage.Unit(settings.High);
         double level = DriveStage.Unit(settings.Level);
 
         bool enabled = settings.Enabled;
         bool bright = BrightEnabled;
         bool speaker = InternalSpeakerEnabled;
 
-        // 設定に変更がなければ再計算しない
         if (_configured &&
             _rate == rate &&
             _lastEnabled == enabled &&
@@ -181,6 +162,7 @@ internal sealed class AmpStage
             _lastBass == bass &&
             _lastMiddle == middle &&
             _lastTreble == treble &&
+            _lastHigh == high &&
             _lastLevel == level)
         {
             return;
@@ -189,34 +171,16 @@ internal sealed class AmpStage
         bool newRate = !_configured || _rate != rate;
 
         if (newRate)
-        {
             Reset();
-        }
 
         _rate = rate;
 
         _smooth = 1.0 - Math.Exp(
             -1.0 / (SmoothTimeSeconds * rate));
 
-        // ====================================
-        // GAIN
-        // ====================================
-
         _gainTarget =
             1.0 +
             (MaxPreampGain - 1.0) * gain * gain;
-
-        // ====================================
-        // LEVEL ★ 音量改善箇所
-        // ====================================
-
-        // 旧仕様：
-        // _levelTarget = 2.0 * level * level;
-
-        // 新仕様：
-        // Level 50 = 1.25倍
-        // Level 80 = 2.00倍
-        // Level 100 = 2.50倍
 
         _levelTarget = MaxOutputLevel * level;
 
@@ -224,40 +188,53 @@ internal sealed class AmpStage
         _brightTarget = bright ? 1.0 : 0.0;
         _speakerTarget = speaker ? 1.0 : 0.0;
 
+        // High 0＝最大カット、50＝補正なし、100＝最大ブースト。
+        _highTarget = (high - .5) * 2.0;
+
         if (newRate)
         {
             _gain = _gainTarget;
             _level = _levelTarget;
             _mix = _mixTarget;
+            _highAmount = _highTarget;
             _brightMix = _brightTarget;
             _speakerMix = _speakerTarget;
         }
 
-        // ====================================
-        // JC-120風 EQ
-        // ====================================
-
-        _inputHighPass.HighPass(
-            rate,
-            InputHighPassHz);
+        _inputHighPass.HighPass(rate, InputHighPassHz);
 
         _bass.Shelf(
             rate,
             BassHz,
-            (bass - 0.5) * 2.0 * BassRangeDb,
+            (bass - .5) * 2.0 * BassRangeDb,
             false);
 
         _middle.Peak(
             rate,
             MiddleHz,
-            (middle - 0.5) * 2.0 * MiddleRangeDb,
-            0.75);
+            (middle - .5) * 2.0 * MiddleRangeDb,
+            .75);
 
         _treble.Shelf(
             rate,
             TrebleHz,
-            (treble - 0.5) * 2.0 * TrebleRangeDb,
+            (treble - .5) * 2.0 * TrebleRangeDb,
             true);
+
+        // 係数は固定し、HIGHノブによる混合率を平滑化する。
+        double highFrequency = Math.Min(HighHz, rate * .45);
+
+        _highBoost.Peak(
+            rate,
+            highFrequency,
+            HighRangeDb,
+            HighQ);
+
+        _highCut.Peak(
+            rate,
+            highFrequency,
+            -HighRangeDb,
+            HighQ);
 
         _bright.Shelf(
             rate,
@@ -265,25 +242,19 @@ internal sealed class AmpStage
             BrightBoostDb,
             true);
 
-        // ====================================
-        // スピーカー音響補正
-        // ====================================
-
-        _speakerHighPass.HighPass(
-            rate,
-            SpeakerHighPassHz);
+        _speakerHighPass.HighPass(rate, SpeakerHighPassHz);
 
         _speakerBass.Peak(
             rate,
             SpeakerBassHz,
             1.2,
-            0.75);
+            .75);
 
         _speakerLowMid.Peak(
             rate,
             SpeakerLowMidHz,
             -1.3,
-            0.9);
+            .9);
 
         _speakerPresence.Peak(
             rate,
@@ -291,17 +262,8 @@ internal sealed class AmpStage
             1.6,
             1.1);
 
-        _speakerLowPass1.LowPass(
-            rate,
-            SpeakerLowPassHz1);
-
-        _speakerLowPass2.LowPass(
-            rate,
-            SpeakerLowPassHz2);
-
-        // ====================================
-        // 設定キャッシュ
-        // ====================================
+        _speakerLowPass1.LowPass(rate, SpeakerLowPassHz1);
+        _speakerLowPass2.LowPass(rate, SpeakerLowPassHz2);
 
         _lastEnabled = enabled;
         _lastBright = bright;
@@ -311,34 +273,26 @@ internal sealed class AmpStage
         _lastBass = bass;
         _lastMiddle = middle;
         _lastTreble = treble;
+        _lastHigh = high;
         _lastLevel = level;
 
         _configured = true;
     }
 
-    // ========================================
-    // 音声処理
-    // ========================================
-
     public double Process(double input)
     {
         if (!_configured)
-        {
             return double.IsFinite(input) ? input : 0.0;
-        }
 
         if (!double.IsFinite(input))
-        {
             input = 0.0;
-        }
-
-        // ====================================
-        // パラメータの平滑化
-        // ====================================
 
         _gain += (_gainTarget - _gain) * _smooth;
         _level += (_levelTarget - _level) * _smooth;
         _mix += (_mixTarget - _mix) * _smooth;
+
+        _highAmount +=
+            (_highTarget - _highAmount) * _smooth;
 
         _brightMix +=
             (_brightTarget - _brightMix) * _smooth;
@@ -346,46 +300,33 @@ internal sealed class AmpStage
         _speakerMix +=
             (_speakerTarget - _speakerMix) * _smooth;
 
-        // アンプOFF
         if (_mixTarget == 0.0 && _mix < 1e-8)
-        {
             return input;
-        }
-
-        // ====================================
-        // プリアンプ処理
-        // ====================================
 
         double x = _inputHighPass.Process(input);
 
-        // GAINを適用
         x *= _gain;
-
-        // ====================================
-        // 3バンド EQ
-        // ====================================
 
         x = _bass.Process(x);
         x = _middle.Process(x);
         x = _treble.Process(x);
 
-        // ====================================
-        // BRIGHT
-        // ====================================
+        double boostedHigh = _highBoost.Process(x);
+        double cutHigh = _highCut.Process(x);
+
+        if (_highAmount > 0)
+        {
+            x += (boostedHigh - x) * _highAmount;
+        }
+        else if (_highAmount < 0)
+        {
+            x += (cutHigh - x) * -_highAmount;
+        }
 
         double bright = _bright.Process(x);
-
         x += (bright - x) * _brightMix;
 
-        // ====================================
-        // 過大ピークのソフト制限
-        // ====================================
-
         x = LimitExceptionalPeaks(x);
-
-        // ====================================
-        // スピーカー音響補正
-        // ====================================
 
         double speaker = _speakerHighPass.Process(x);
 
@@ -397,28 +338,17 @@ internal sealed class AmpStage
 
         x += (speaker - x) * _speakerMix;
 
-        // ====================================
-        // 最終音量 ★
-        // ====================================
-
         double wet = x * _level;
 
-        // ON/OFF時に急激に切り替えない
         return input + (wet - input) * _mix;
     }
-
-    // ========================================
-    // 過大ピークのソフト制限
-    // ========================================
 
     private static double LimitExceptionalPeaks(double x)
     {
         double magnitude = Math.Abs(x);
 
         if (magnitude <= CleanHeadroomKnee)
-        {
             return x;
-        }
 
         double shaped =
             CleanHeadroomKnee +
