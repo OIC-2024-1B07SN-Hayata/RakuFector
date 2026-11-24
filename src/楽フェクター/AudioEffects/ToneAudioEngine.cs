@@ -9,6 +9,7 @@ public sealed class ToneAudioEngine
     private readonly SelectableDriveStage _a = new();
     private readonly SelectableDriveStage _b = new();
     private readonly AmpStage _amp = new();
+    private readonly DelayStage _delay = new();
     private readonly Oversampler8x _resampler = new();
     private ToneSettings _settings = ToneSettings.Default;
     private int _rate;
@@ -48,6 +49,7 @@ public sealed class ToneAudioEngine
         }
         double rate = sampleRate * Oversampler8x.Factor;
         _a.Configure(settings.A, rate); _b.Configure(settings.B, rate); _amp.Configure(settings.Amp, rate);
+        _delay.Configure(settings.Delay, sampleRate, temporaryBypass, settings.DelayRevision);
         var highRateSamples = _resampler.Samples;
         for (int i = 0; i < samples.Length; i++)
         {
@@ -64,12 +66,9 @@ public sealed class ToneAudioEngine
             }
             double wet = _resampler.Down();
 
-            double output =
-                (input + (wet - input) * _pathMix)
-                * _master;
-
-            // 音割れを避けるため、出力を一時的に下げる
-            output *= 0.2;
+            // 既存の固定倍率を維持し、DelayをOUTPUT音量の前に配置する。
+            double dry = (input + (wet - input) * _pathMix) * .2;
+            double output = _delay.Process(dry) * _master;
 
             // SafetyCeilingを通さずに出力する
             samples[i] = double.IsFinite(output)
@@ -89,7 +88,7 @@ public sealed class ToneAudioEngine
 
     public void Reset()
     {
-        _a.Reset(); _b.Reset(); _amp.Reset(); _resampler.Reset();
+        _a.Reset(); _b.Reset(); _amp.Reset(); _resampler.Reset(); _delay.Reset();
         _rate = 0; _pathMix = 0;
     }
 }

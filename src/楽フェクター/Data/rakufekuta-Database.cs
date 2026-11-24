@@ -8,7 +8,9 @@ using Microsoft.Data.Sqlite;
 
 namespace FXForge.Data;
 
-public sealed record PresetListItem(long Id, string Name);
+public sealed record PresetListItem(
+    long Id,
+    string Name);
 
 public sealed record SavedTone(
     ToneSettings Settings,
@@ -18,17 +20,19 @@ public sealed class RakufekutaDatabase
 {
     private const int ApplicationId = 1380337490;
 
-    private static readonly SemaphoreSlim Gate = new(1, 1);
+    private static readonly SemaphoreSlim Gate =
+        new(1, 1);
 
     public string DatabasePath { get; }
 
     public RakufekutaDatabase(string? path = null)
     {
-        DatabasePath = Path.GetFullPath(path ?? Path.Combine(
-            Environment.GetFolderPath(
-                Environment.SpecialFolder.LocalApplicationData),
-            "FXForge",
-            "rakufekuta-.db"));
+        DatabasePath = Path.GetFullPath(
+            path ?? Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData),
+                "FXForge",
+                "rakufekuta-.db"));
     }
 
     public Task<IReadOnlyList<PresetListItem>> ListAsync() =>
@@ -43,21 +47,26 @@ public sealed class RakufekutaDatabase
                 ORDER BY PRESET_ID;
                 """;
 
-            using var reader = command.ExecuteReader();
+            using var reader =
+                command.ExecuteReader();
 
-            var items = new List<PresetListItem>();
+            var items =
+                new List<PresetListItem>();
 
             while (reader.Read())
             {
-                items.Add(new PresetListItem(
-                    reader.GetInt64(0),
-                    reader.GetString(1)));
+                items.Add(
+                    new PresetListItem(
+                        reader.GetInt64(0),
+                        reader.GetString(1)));
             }
 
             return (IReadOnlyList<PresetListItem>)items;
         });
 
-    public Task<long> SaveNewAsync(string name, SavedTone tone)
+    public Task<long> SaveNewAsync(
+        string name,
+        SavedTone tone)
     {
         name = (name ?? "").Trim();
 
@@ -72,7 +81,8 @@ public sealed class RakufekutaDatabase
         return Run(() =>
         {
             using var connection = Open();
-            using var transaction = connection.BeginTransaction();
+            using var transaction =
+                connection.BeginTransaction();
 
             using (var command = Command(
                 connection,
@@ -84,7 +94,8 @@ public sealed class RakufekutaDatabase
                 """,
                 ("$name", name)))
             {
-                if (Convert.ToInt64(command.ExecuteScalar()) != 0)
+                if (Convert.ToInt64(
+                        command.ExecuteScalar()) != 0)
                 {
                     throw new InvalidOperationException(
                         "同じ名前が登録されています。\n" +
@@ -92,7 +103,8 @@ public sealed class RakufekutaDatabase
                 }
             }
 
-            var settings = tone.Settings;
+            var settings =
+                tone.Settings;
 
             Execute(
                 connection,
@@ -118,16 +130,26 @@ public sealed class RakufekutaDatabase
                 transaction,
                 "SELECT last_insert_rowid();"))
             {
-                id = Convert.ToInt64(command.ExecuteScalar());
+                id = Convert.ToInt64(
+                    command.ExecuteScalar());
             }
 
             InsertDrive(
-                connection, transaction, id, "A", settings.A);
+                connection,
+                transaction,
+                id,
+                "A",
+                settings.A);
 
             InsertDrive(
-                connection, transaction, id, "B", settings.B);
+                connection,
+                transaction,
+                id,
+                "B",
+                settings.B);
 
-            var amp = settings.Amp;
+            var amp =
+                settings.Amp;
 
             Execute(
                 connection,
@@ -151,6 +173,12 @@ public sealed class RakufekutaDatabase
                 ("$level", amp.Level * 100),
                 ("$enabled", amp.Enabled ? 1 : 0));
 
+            SaveDelay(
+                connection,
+                transaction,
+                id,
+                settings.Delay);
+
             transaction.Commit();
 
             return id;
@@ -158,10 +186,12 @@ public sealed class RakufekutaDatabase
     }
 
     /// <summary>
-    /// プリセットID・名前を維持して設定を更新する。
-    /// 全処理が成功したときだけコミットする。
+    /// プリセットIDと名前を維持して更新する。
+    /// 全処理が成功した場合だけコミットする。
     /// </summary>
-    public Task UpdateAsync(long id, SavedTone tone)
+    public Task UpdateAsync(
+        long id,
+        SavedTone tone)
     {
         if (id <= 0)
             throw new ArgumentOutOfRangeException(nameof(id));
@@ -171,9 +201,11 @@ public sealed class RakufekutaDatabase
         return Run(() =>
         {
             using var connection = Open();
-            using var transaction = connection.BeginTransaction();
+            using var transaction =
+                connection.BeginTransaction();
 
-            var settings = tone.Settings;
+            var settings =
+                tone.Settings;
 
             using (var command = Command(
                 connection,
@@ -198,12 +230,21 @@ public sealed class RakufekutaDatabase
             }
 
             UpdateDrive(
-                connection, transaction, id, "A", settings.A);
+                connection,
+                transaction,
+                id,
+                "A",
+                settings.A);
 
             UpdateDrive(
-                connection, transaction, id, "B", settings.B);
+                connection,
+                transaction,
+                id,
+                "B",
+                settings.B);
 
-            var amp = settings.Amp;
+            var amp =
+                settings.Amp;
 
             using (var command = Command(
                 connection,
@@ -235,6 +276,12 @@ public sealed class RakufekutaDatabase
                 }
             }
 
+            SaveDelay(
+                connection,
+                transaction,
+                id,
+                settings.Delay);
+
             transaction.Commit();
 
             return true;
@@ -245,7 +292,8 @@ public sealed class RakufekutaDatabase
         Run(() =>
         {
             using var connection = Open();
-            using var transaction = connection.BeginTransaction();
+            using var transaction =
+                connection.BeginTransaction();
 
             double output;
             bool outputEnabled;
@@ -271,12 +319,18 @@ public sealed class RakufekutaDatabase
                         "選択したプリセットが見つかりません。");
                 }
 
-                output = ReadValue(reader, 0);
-                outputEnabled = ReadFlag(reader, 1);
-                reverse = ReadFlag(reader, 2);
+                output =
+                    ReadValue(reader, 0);
+
+                outputEnabled =
+                    ReadFlag(reader, 1);
+
+                reverse =
+                    ReadFlag(reader, 2);
             }
 
-            var drives = new Dictionary<string, DriveSettings>();
+            var drives =
+                new Dictionary<string, DriveSettings>();
 
             using (var command = Command(
                 connection,
@@ -299,8 +353,11 @@ public sealed class RakufekutaDatabase
             {
                 while (reader.Read())
                 {
-                    string slot = reader.GetString(0);
-                    long type = reader.GetInt64(1);
+                    string slot =
+                        reader.GetString(0);
+
+                    long type =
+                        reader.GetInt64(1);
 
                     DriveKind kind =
                         (reader.GetInt64(6), type) switch
@@ -383,7 +440,13 @@ public sealed class RakufekutaDatabase
                     drives["B"],
                     reverse,
                     amp,
-                    output),
+                    output)
+                {
+                    Delay = LoadDelay(
+                        connection,
+                        transaction,
+                        id)
+                },
                 outputEnabled);
 
             Validate(result);
@@ -393,7 +456,8 @@ public sealed class RakufekutaDatabase
             return result;
         });
 
-    private static async Task<T> Run<T>(Func<T> action)
+    private static async Task<T> Run<T>(
+        Func<T> action)
     {
         await Gate.WaitAsync().ConfigureAwait(false);
 
@@ -412,22 +476,27 @@ public sealed class RakufekutaDatabase
         Directory.CreateDirectory(
             Path.GetDirectoryName(DatabasePath)!);
 
-        var builder = new SqliteConnectionStringBuilder
-        {
-            DataSource = DatabasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            ForeignKeys = true,
-            Pooling = false,
-            DefaultTimeout = 5
-        };
+        var builder =
+            new SqliteConnectionStringBuilder
+            {
+                DataSource = DatabasePath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                ForeignKeys = true,
+                Pooling = false,
+                DefaultTimeout = 5
+            };
 
-        var connection = new SqliteConnection(builder.ToString());
+        var connection =
+            new SqliteConnection(builder.ToString());
 
         try
         {
             connection.Open();
 
-            using var transaction = connection.BeginTransaction();
+            BackupBeforeTempo(connection);
+
+            using var transaction =
+                connection.BeginTransaction();
 
             long count;
 
@@ -440,18 +509,22 @@ public sealed class RakufekutaDatabase
                 WHERE name NOT LIKE 'sqlite_%';
                 """))
             {
-                count = Convert.ToInt64(command.ExecuteScalar());
+                count = Convert.ToInt64(
+                    command.ExecuteScalar());
             }
 
             if (count == 0)
             {
-                Execute(connection, transaction, SchemaSql);
+                Execute(
+                    connection,
+                    transaction,
+                    SchemaSql);
 
                 Execute(
                     connection,
                     transaction,
                     $"PRAGMA application_id = {ApplicationId};" +
-                    "PRAGMA user_version = 2;");
+                    "PRAGMA user_version = 5;");
             }
             else
             {
@@ -463,7 +536,8 @@ public sealed class RakufekutaDatabase
                     transaction,
                     "PRAGMA application_id;"))
                 {
-                    appId = Convert.ToInt64(command.ExecuteScalar());
+                    appId = Convert.ToInt64(
+                        command.ExecuteScalar());
                 }
 
                 using (var command = Command(
@@ -471,15 +545,61 @@ public sealed class RakufekutaDatabase
                     transaction,
                     "PRAGMA user_version;"))
                 {
-                    version = Convert.ToInt64(command.ExecuteScalar());
+                    version = Convert.ToInt64(
+                        command.ExecuteScalar());
                 }
 
-                if (appId != ApplicationId || version != 2)
+                if (appId != ApplicationId ||
+                    version is not (2 or 3 or 4 or 5))
                 {
                     throw new InvalidDataException(
                         "既存DBは今回の保存形式と異なります。\n" +
                         "変更せず処理を中止しました。\n\n" +
                         DatabasePath);
+                }
+
+                if (version == 2)
+                {
+                    Execute(
+                        connection,
+                        transaction,
+                        "ALTER TABLE delay ADD COLUMN MODE INTEGER NOT NULL DEFAULT 0 CHECK(MODE IN (0,1,2));");
+
+                    Execute(
+                        connection,
+                        transaction,
+                        "PRAGMA user_version = 3;");
+                }
+
+                if (version is 2 or 3)
+                {
+                    Execute(
+                        connection,
+                        transaction,
+                        "ALTER TABLE delay ADD COLUMN BPM INTEGER NOT NULL DEFAULT 120 CHECK(BPM BETWEEN 30 AND 300);");
+
+                    Execute(
+                        connection,
+                        transaction,
+                        "ALTER TABLE delay ADD COLUMN NOTE INTEGER NOT NULL DEFAULT 0 CHECK(NOTE BETWEEN 0 AND 6);");
+
+                    Execute(
+                        connection,
+                        transaction,
+                        "PRAGMA user_version = 4;");
+                }
+
+                if (version is 2 or 3 or 4)
+                {
+                    Execute(
+                        connection,
+                        transaction,
+                        "ALTER TABLE delay ADD COLUMN WET_LEVEL REAL NOT NULL DEFAULT 100 CHECK(WET_LEVEL BETWEEN 0 AND 100);");
+
+                    Execute(
+                        connection,
+                        transaction,
+                        "PRAGMA user_version = 5;");
                 }
             }
 
@@ -517,7 +637,8 @@ public sealed class RakufekutaDatabase
         string slot,
         DriveSettings drive)
     {
-        var mapping = DriveMapping(drive.Kind);
+        var mapping =
+            DriveMapping(drive.Kind);
 
         Execute(
             connection,
@@ -571,13 +692,13 @@ public sealed class RakufekutaDatabase
             }
         }
 
-        var mapping = DriveMapping(drive.Kind);
+        var mapping =
+            DriveMapping(drive.Kind);
 
         if (oldTable != mapping.Table)
         {
-            // ODとDSをまたぐ種類変更の場合のみ保存先テーブルを移す。
-            // 他テーブルから旧行への参照があれば外部キー制約で停止し、
-            // 更新全体がロールバックされる。
+            // ODとDSをまたぐ変更だけ保存先テーブルを移す。
+            // 外部キー制約に違反した場合は全体をロールバックする。
             Execute(
                 connection,
                 transaction,
@@ -596,7 +717,7 @@ public sealed class RakufekutaDatabase
             return;
         }
 
-        // 同じ分類なら行IDを保持したまま更新する。
+        // 同じ分類なら行IDを維持して更新する。
         Execute(
             connection,
             transaction,
@@ -619,7 +740,8 @@ public sealed class RakufekutaDatabase
         string sql,
         params (string Name, object Value)[] values)
     {
-        var command = connection.CreateCommand();
+        var command =
+            connection.CreateCommand();
 
         command.Transaction = transaction;
         command.CommandText = sql;
@@ -653,7 +775,8 @@ public sealed class RakufekutaDatabase
         SqliteDataReader reader,
         int ordinal)
     {
-        double value = reader.GetDouble(ordinal) / 100;
+        double value =
+            reader.GetDouble(ordinal) / 100;
 
         CheckUnit(value);
 
@@ -674,14 +797,20 @@ public sealed class RakufekutaDatabase
         };
     }
 
-    public static void Validate(SavedTone tone)
+    public static void Validate(
+        SavedTone tone)
     {
         ArgumentNullException.ThrowIfNull(tone);
         ArgumentNullException.ThrowIfNull(tone.Settings);
 
-        var settings = tone.Settings;
+        var settings =
+            tone.Settings;
 
-        foreach (var drive in new[] { settings.A, settings.B })
+        foreach (var drive in new[]
+        {
+            settings.A,
+            settings.B
+        })
         {
             ArgumentNullException.ThrowIfNull(drive);
 
@@ -696,9 +825,45 @@ public sealed class RakufekutaDatabase
             CheckUnit(drive.Level);
         }
 
-        ArgumentNullException.ThrowIfNull(settings.Amp);
+        ArgumentNullException.ThrowIfNull(
+            settings.Amp);
 
-        var amp = settings.Amp;
+        var delay =
+            settings.Delay;
+
+        ArgumentNullException.ThrowIfNull(delay);
+
+        if (!Enum.IsDefined(delay.Mode) ||
+            !double.IsFinite(delay.TimeMilliseconds) ||
+            delay.TimeMilliseconds < DelaySettings.MinimumTimeMs ||
+            delay.TimeMilliseconds > DelaySettings.MaximumTimeMs)
+        {
+            throw new InvalidDataException(
+                "DelayのモードまたはTimeが不正です。");
+        }
+
+        if (delay.TempoBpm is < 30 or > 300 ||
+            !Enum.IsDefined(delay.Note))
+        {
+            throw new InvalidDataException(
+                "DelayのBPMまたは音符が不正です。");
+        }
+
+        _ = delay.EffectiveTimeMilliseconds;
+
+        CheckUnit(delay.Feedback);
+        CheckUnit(delay.Mix);
+        CheckUnit(delay.WetLevel);
+
+        if (delay.Feedback >
+            DelaySettings.MaximumFeedback)
+        {
+            throw new InvalidDataException(
+                "DelayのFeedbackは95％以下にしてください。");
+        }
+
+        var amp =
+            settings.Amp;
 
         foreach (double value in new[]
         {
@@ -715,9 +880,158 @@ public sealed class RakufekutaDatabase
         }
     }
 
-    private static void CheckUnit(double value)
+    private void BackupBeforeTempo(
+        SqliteConnection connection)
     {
-        if (!double.IsFinite(value) || value < 0 || value > 1)
+        long appId;
+        long version;
+
+        using (var command =
+               connection.CreateCommand())
+        {
+            command.CommandText =
+                "PRAGMA application_id;";
+
+            appId = Convert.ToInt64(
+                command.ExecuteScalar());
+
+            command.CommandText =
+                "PRAGMA user_version;";
+
+            version = Convert.ToInt64(
+                command.ExecuteScalar());
+        }
+
+        if (appId != ApplicationId ||
+            version is not (2 or 3 or 4))
+        {
+            return;
+        }
+
+        string backupPath =
+            DatabasePath +
+            $".before-tempo-v{version}-" +
+            DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") +
+            "-" +
+            Guid.NewGuid().ToString("N") +
+            ".db";
+
+        using var backup =
+            new SqliteConnection(
+                new SqliteConnectionStringBuilder
+                {
+                    DataSource = backupPath,
+                    Mode = SqliteOpenMode.ReadWriteCreate,
+                    Pooling = false
+                }.ToString());
+
+        backup.Open();
+
+        connection.BackupDatabase(backup);
+    }
+
+    private static void SaveDelay(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long id,
+        DelaySettings delay)
+    {
+        long count;
+
+        using (var command = Command(
+            connection,
+            transaction,
+            "SELECT COUNT(*) FROM delay WHERE PRESET_ID=$id;",
+            ("$id", id)))
+        {
+            count = Convert.ToInt64(
+                command.ExecuteScalar());
+        }
+
+        if (count > 1)
+        {
+            throw new InvalidDataException(
+                "同じプリセットに複数のDelayデータがあります。");
+        }
+
+        string sql = count == 0
+            ? "INSERT INTO delay (PRESET_ID, MODE, TIME, FEEDBACK, LEVEL, SWITCH, BPM, NOTE, WET_LEVEL) " +
+              "VALUES ($id,$mode,$time,$feedback,$mix,$enabled,$bpm,$note,$wet);"
+            : "UPDATE delay SET MODE=$mode, TIME=$time, FEEDBACK=$feedback, " +
+              "LEVEL=$mix, SWITCH=$enabled, BPM=$bpm, NOTE=$note, WET_LEVEL=$wet WHERE PRESET_ID=$id;";
+
+        // 既存LEVEL列はMixとして維持。
+        // 追加したWET_LEVEL列に反復音の音量を保存する。
+        Execute(
+            connection,
+            transaction,
+            sql,
+            ("$id", id),
+            ("$mode", (int)delay.Mode),
+            ("$time", delay.TimeMilliseconds),
+            ("$feedback", delay.Feedback * 100),
+            ("$mix", delay.Mix * 100),
+            ("$enabled", delay.Enabled ? 1 : 0),
+            ("$bpm", delay.TempoBpm),
+            ("$note", (int)delay.Note),
+            ("$wet", delay.WetLevel * 100));
+    }
+
+    private static DelaySettings LoadDelay(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long id)
+    {
+        using var command = Command(
+            connection,
+            transaction,
+            "SELECT SWITCH,MODE,TIME,FEEDBACK,LEVEL,BPM,NOTE,WET_LEVEL FROM delay WHERE PRESET_ID=$id;",
+            ("$id", id));
+
+        using var reader =
+            command.ExecuteReader();
+
+        if (!reader.Read())
+            return DelaySettings.Default;
+
+        var value = new DelaySettings(
+            ReadFlag(reader, 0),
+            (DelayMode)reader.GetInt32(1),
+            reader.IsDBNull(2)
+                ? 400
+                : reader.GetDouble(2),
+            reader.IsDBNull(3)
+                ? .35
+                : ReadValue(reader, 3),
+            reader.IsDBNull(4)
+                ? .25
+                : ReadValue(reader, 4))
+        {
+            TempoBpm =
+                reader.GetInt32(5),
+
+            Note =
+                (DelayNote)reader.GetInt32(6),
+
+            WetLevel =
+                ReadValue(reader, 7)
+        };
+
+        if (reader.Read())
+        {
+            throw new InvalidDataException(
+                "Delayのデータが重複しています。");
+        }
+
+        return value;
+    }
+
+    private static void CheckUnit(
+        double value)
+    {
+        if (!double.IsFinite(value) ||
+            value < 0 ||
+            value > 1)
         {
             throw new InvalidDataException(
                 "設定値が0～100の範囲外です。");
@@ -780,6 +1094,14 @@ public sealed class RakufekutaDatabase
             DELAY_ID INTEGER PRIMARY KEY AUTOINCREMENT,
             PRESET_ID INTEGER NOT NULL
                 REFERENCES preset(PRESET_ID),
+            MODE INTEGER NOT NULL DEFAULT 0
+                CHECK(MODE IN (0,1,2)),
+            BPM INTEGER NOT NULL DEFAULT 120
+                CHECK(BPM BETWEEN 30 AND 300),
+            NOTE INTEGER NOT NULL DEFAULT 0
+                CHECK(NOTE BETWEEN 0 AND 6),
+            WET_LEVEL REAL NOT NULL DEFAULT 100
+                CHECK(WET_LEVEL BETWEEN 0 AND 100),
             TIME REAL CHECK(TIME >= 0),
             FEEDBACK REAL CHECK(FEEDBACK BETWEEN 0 AND 100),
             LEVEL REAL CHECK(LEVEL BETWEEN 0 AND 100),

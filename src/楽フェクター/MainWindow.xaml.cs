@@ -229,48 +229,49 @@ public partial class MainWindow : Window
         }
 
 
-            if (action is "Distortion ON/OFF" or "Drive B ON/OFF" or "AMP ON/OFF")
+        if (action is "Distortion ON/OFF" or "Drive B ON/OFF" or "AMP ON/OFF" or "Delay ON/OFF")
+        {
+            string slot = action switch
             {
-                string slot = action switch
-                {
-                    "Distortion ON/OFF" => "DRIVE A",
-                    "Drive B ON/OFF" => "DRIVE B",
-                    _ => "AMP"
-                };
-                if (_tone.ToggleFootswitchEffect(slot, out bool enabled))
-                    return new FootswitchActionResult($"{slot} {(enabled ? "ON" : "OFF")}", enabled);
-                return new FootswitchActionResult($"{slot}: 利用できません");
-            }
-
-            int next = action switch
-            {
-                "Next Preset" => presetNumber % 5 + 1,
-                "Previous Preset" => (presetNumber + 3) % 5 + 1,
-                "Preset 1" => 1,
-                "Preset 2" => 2,
-                "Preset 3" => 3,
-                "Preset 4" => 4,
-                "Preset 5" => 5,
-                _ => 0
+                "Distortion ON/OFF" => "DRIVE A",
+                "Drive B ON/OFF" => "DRIVE B",
+                "Delay ON/OFF" => "DELAY",
+                _ => "AMP"
             };
-            if (next > 0)
-            {
-                if (!_tone.ApplyFootswitchPreset(next))
-                    return new FootswitchActionResult("音色切替に失敗しました");
-                return new FootswitchActionResult($"PRESET {next} SELECTED", true, next);
-            }
-            if (action == "Tuner")
-            {
-                ShowPage("Tuner");
-                return new FootswitchActionResult("TUNER OPENED", true);
-            }
-            if (action is "Delay ON/OFF" or "Reverb ON/OFF" or "Chorus ON/OFF")
-                return new FootswitchActionResult($"{action.Replace(" ON/OFF", "")}: 未実装（音は変わりません）");
+            if (_tone.ToggleFootswitchEffect(slot, out bool enabled))
+                return new FootswitchActionResult($"{slot} {(enabled ? "ON" : "OFF")}", enabled);
+            return new FootswitchActionResult($"{slot}: 利用できません");
+        }
 
-            return new FootswitchActionResult("UNASSIGNED");
+        int next = action switch
+        {
+            "Next Preset" => presetNumber % 5 + 1,
+            "Previous Preset" => (presetNumber + 3) % 5 + 1,
+            "Preset 1" => 1,
+            "Preset 2" => 2,
+            "Preset 3" => 3,
+            "Preset 4" => 4,
+            "Preset 5" => 5,
+            _ => 0
+        };
+        if (next > 0)
+        {
+            if (!_tone.ApplyFootswitchPreset(next))
+                return new FootswitchActionResult("音色切替に失敗しました");
+            return new FootswitchActionResult($"PRESET {next} SELECTED", true, next);
+        }
+        if (action == "Tuner")
+        {
+            ShowPage("Tuner");
+            return new FootswitchActionResult("TUNER OPENED", true);
+        }
+        if (action is "Reverb ON/OFF" or "Chorus ON/OFF")
+            return new FootswitchActionResult($"{action.Replace(" ON/OFF", "")}: 未実装（音は変わりません）");
+
+        return new FootswitchActionResult("UNASSIGNED");
 
 
-        
+
     }
 
     private void ToneNav_Click(object sender, RoutedEventArgs e) => ShowPage("Tone");
@@ -292,13 +293,19 @@ public partial class MainWindow : Window
         Title = drumPage ? "楽フェクター — " + _drum.EditorTitle : "楽フェクター";
         MainContent.Content = page switch
         {
-            "Tuner" => (UserControl)_tuner, "Chord" => _chord,
-            "Drum" => _drum, "Footswitch" => _foot, _ => _tone
+            "Tuner" => (UserControl)_tuner,
+            "Chord" => _chord,
+            "Drum" => _drum,
+            "Footswitch" => _foot,
+            _ => _tone
         };
         PageTitleText.Text = page switch
         {
-            "Tuner" => "TUNER", "Chord" => "CHORD DETECTION", "Drum" => "DRUM EDITOR",
-            "Footswitch" => "FOOTSWITCH SETTING", _ => "TONE STUDIO"
+            "Tuner" => "TUNER",
+            "Chord" => "CHORD DETECTION",
+            "Drum" => "DRUM EDITOR",
+            "Footswitch" => "FOOTSWITCH SETTING",
+            _ => "TONE STUDIO"
         };
         var buttons = new[] { ToneNavButton, TunerNavButton, ChordNavButton, DrumNavButton, FootswitchNavButton };
         var names = new[] { "Tone", "Tuner", "Chord", "Drum", "Footswitch" };
