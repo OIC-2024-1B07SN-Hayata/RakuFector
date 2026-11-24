@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using FXForge.AudioEffects;
 using FXForge.Models;
 
@@ -22,8 +23,52 @@ public partial class TonePage :
     private EffectItem? _selectedEffect;
     private bool _applyingPreset;
     private Point _dragStart;
+    private long _delayRevision;
 
-    public ObservableCollection<EffectItem> Effects { get; } = new();
+    private Dictionary<string, double>? _delayModeValues;
+
+    private double _delayManualTimeMs = 400;
+    private DelayNote _delaySelectedNote;
+
+    private DelaySettings _lastValidDelayTiming =
+        DelaySettings.Default;
+
+    private bool _updatingDelayControls;
+    private bool _delayTimingValid = true;
+    private bool _delayTempoMode;
+
+    private string _delayTimingStatus = "TIME：400ms";
+
+    public bool IsTimeMode
+    {
+        get => !_delayTempoMode;
+        set
+        {
+            if (value)
+                SetDelayTimeMode(false);
+        }
+    }
+
+    public bool IsTempoMode
+    {
+        get => _delayTempoMode;
+        set
+        {
+            if (value)
+                SetDelayTimeMode(true);
+        }
+    }
+
+    public string DelayTimingStatus =>
+        _delayTimingStatus;
+
+    public Brush DelayTimingStatusBrush =>
+        _delayTimingValid
+            ? Brushes.LightSteelBlue
+            : Brushes.Salmon;
+
+    public ObservableCollection<EffectItem> Effects { get; } =
+        new();
 
     public EffectItem? SelectedEffect
     {
@@ -64,7 +109,22 @@ public partial class TonePage :
         SynchronizeAudioSettings();
     }
 
-    public void ProcessAudioOutput(float[] samples, int sampleRate)
+    private void SetDelayTimeMode(bool tempo)
+    {
+        if (_delayTempoMode == tempo)
+            return;
+
+        _delayTempoMode = tempo;
+
+        OnPropertyChanged(nameof(IsTimeMode));
+        OnPropertyChanged(nameof(IsTempoMode));
+
+        SynchronizeAudioSettings();
+    }
+
+    public void ProcessAudioOutput(
+        float[] samples,
+        int sampleRate)
     {
         _engine.Process(samples, sampleRate);
     }
@@ -150,8 +210,11 @@ public partial class TonePage :
                 new ParameterDefinition("Level", 52))
         };
 
-        var driveA = CreateDriveSlot("DRIVE A", presets, 0);
-        var driveB = CreateDriveSlot("DRIVE B", presets, 1);
+        var driveA = CreateDriveSlot(
+            "DRIVE A", presets, 0);
+
+        var driveB = CreateDriveSlot(
+            "DRIVE B", presets, 1);
 
         driveA.IsEnabled = false;
         driveB.IsEnabled = false;
@@ -190,10 +253,45 @@ public partial class TonePage :
             new EffectParameter(
                 "Level", defaults.OutputLevel * 100));
 
+        var delay = new EffectItem(
+            "DELAY",
+            "Digital",
+            "Digital Delay",
+            "DELAY",
+            "#AD85ED",
+            false);
+
+        foreach (DelayMode mode in Enum.GetValues<DelayMode>())
+        {
+            delay.AvailablePresets.Add(
+                new EffectPresetDefinition(
+                    mode.ToString(),
+                    mode + " Delay",
+                    "#AD85ED",
+                    new ParameterDefinition(
+                        "Time", 400, 20, 2000, " ms"),
+                    new ParameterDefinition(
+                        "BPM", 120, 30, 300),
+                    new ParameterDefinition(
+                        "Note", 3, 0, 5),
+                    new ParameterDefinition(
+                        "Feedback", 35, 0, 95, "%"),
+                    new ParameterDefinition(
+                        "Mix", 25, 0, 100, "%"),
+                    new ParameterDefinition(
+                        "Level", 100, 0, 100, "%")));
+        }
+
+        delay.SelectedPreset =
+            delay.AvailablePresets[0];
+
+        ConfigureDelayKnobs(delay);
+
         Effects.Add(input);
         Effects.Add(driveA);
         Effects.Add(driveB);
         Effects.Add(amp);
+        Effects.Add(delay);
         Effects.Add(output);
     }
 
@@ -224,12 +322,44 @@ public partial class TonePage :
         object? sender,
         PropertyChangedEventArgs e)
     {
+        if (sender is EffectItem { SlotName: "DELAY" } delay)
+        {
+            if (e.PropertyName ==
+                    nameof(EffectItem.SelectedPreset) &&
+                delay.Parameters.Count == 6)
+            {
+                _delayModeValues =
+                    delay.Parameters.ToDictionary(
+                        parameter => parameter.Name,
+                        parameter => parameter.Value);
+            }
+
+            if (e.PropertyName == "ParametersChanged")
+            {
+                ConfigureDelayKnobs(delay);
+
+                if (_delayModeValues is { } values)
+                {
+                    foreach (var value in values)
+                    {
+                        delay.Parameters.Single(
+                            parameter =>
+                                parameter.Name == value.Key)
+                            .Value = value.Value;
+                    }
+                }
+
+                _delayModeValues = null;
+            }
+        }
+
         if (e.PropertyName == "ParametersChanged")
         {
             ObserveParameters();
             SynchronizeAudioSettings();
         }
-        else if (e.PropertyName == nameof(EffectItem.IsEnabled))
+        else if (e.PropertyName ==
+                 nameof(EffectItem.IsEnabled))
         {
             SynchronizeAudioSettings();
         }
@@ -242,7 +372,9 @@ public partial class TonePage :
             .ToHashSet();
 
         foreach (var old in _watched
-                     .Where(parameter => !current.Contains(parameter))
+                     .Where(
+                         parameter =>
+                             !current.Contains(parameter))
                      .ToArray())
         {
             old.PropertyChanged -= ParameterChanged;
@@ -260,8 +392,14 @@ public partial class TonePage :
         object? sender,
         PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(EffectParameter.Value))
+        if (_updatingDelayControls || _applyingPreset)
+            return;
+
+        if (e.PropertyName ==
+            nameof(EffectParameter.Value))
+        {
             SynchronizeAudioSettings();
+        }
     }
 
     private static double Value(
@@ -269,13 +407,16 @@ public partial class TonePage :
         string parameterName)
     {
         double value = effect.Parameters
-            .FirstOrDefault(parameter => parameter.Name == parameterName)
+            .FirstOrDefault(
+                parameter =>
+                    parameter.Name == parameterName)
             ?.Value ?? 50;
 
         return DriveStage.Unit(value / 100.0);
     }
 
-    private static DriveSettings ReadDrive(EffectItem effect)
+    private static DriveSettings ReadDrive(
+        EffectItem effect)
     {
         var mapping = effect.ShortName switch
         {
@@ -356,10 +497,148 @@ public partial class TonePage :
             ampSettings,
             output.IsEnabled
                 ? Value(output, "Level")
-                : 0);
+                : 0)
+        {
+            Delay = ReadDelay(
+                Effects.Single(
+                    effect => effect.SlotName == "DELAY")),
+
+            DelayRevision = _delayRevision
+        };
 
         _engine.SetSettings(settings);
+
         DisplaySettingsChanged?.Invoke();
+    }
+
+    private static void ConfigureDelayKnobs(
+        EffectItem effect)
+    {
+        effect.Parameters.Single(
+            parameter => parameter.Name == "BPM")
+            .SetDiscreteValues(1);
+
+        effect.Parameters.Single(
+            parameter => parameter.Name == "Note")
+            .SetDiscreteValues(
+                1,
+                Enum.GetValues<DelayNote>()
+                    .Where(
+                        note => note != DelayNote.Manual)
+                    .Select(DelaySettings.NoteLabel)
+                    .ToArray());
+    }
+
+    private DelaySettings ReadDelay(
+        EffectItem effect)
+    {
+        var time = effect.Parameters.Single(
+            parameter => parameter.Name == "Time");
+
+        var note = _delayTempoMode
+            ? (DelayNote)(
+                (int)effect.Parameters.Single(
+                    parameter => parameter.Name == "Note")
+                    .Value + 1)
+            : DelayNote.Manual;
+
+        int bpm = (int)effect.Parameters.Single(
+            parameter => parameter.Name == "BPM")
+            .Value;
+
+        _updatingDelayControls = true;
+
+        try
+        {
+            if (note == DelayNote.Manual)
+            {
+                if (_delaySelectedNote != DelayNote.Manual)
+                    time.Value = _delayManualTimeMs;
+
+                _delayManualTimeMs = time.Value;
+            }
+
+            _delaySelectedNote = note;
+
+            time.IsEditable =
+                note == DelayNote.Manual;
+
+            double requested =
+                note == DelayNote.Manual
+                    ? _delayManualTimeMs
+                    : DelaySettings.CalculateTime(
+                        bpm,
+                        note);
+
+            _delayTimingValid =
+                requested >= DelaySettings.MinimumTimeMs &&
+                requested <= DelaySettings.MaximumTimeMs;
+
+            if (_delayTimingValid)
+            {
+                _lastValidDelayTiming =
+                    new DelaySettings(
+                        false,
+                        DelayMode.Digital,
+                        _delayManualTimeMs,
+                        .35,
+                        .25)
+                    {
+                        TempoBpm = bpm,
+                        Note = note
+                    };
+
+                time.Value = requested;
+
+                _delayTimingStatus =
+                    note == DelayNote.Manual
+                        ? $"TIME：{requested:0.##}ms"
+                        : $"BPM {bpm} × {DelaySettings.NoteLabel(note)} ＝ {requested:0.##}ms";
+            }
+            else
+            {
+                time.Value =
+                    _lastValidDelayTiming
+                        .EffectiveTimeMilliseconds;
+
+                _delayTimingStatus =
+                    $"BPM {bpm} × {DelaySettings.NoteLabel(note)} ＝ {requested:0.##}ms：最大2000msを超えるため未適用。" +
+                    $"現在は{time.Value:0.##}msを維持しています。BPMまたはNoteを変更してください（保存不可）。";
+            }
+
+            OnPropertyChanged(
+                nameof(DelayTimingStatus));
+
+            OnPropertyChanged(
+                nameof(DelayTimingStatusBrush));
+
+            return _lastValidDelayTiming with
+            {
+                Enabled = effect.IsEnabled,
+
+                Mode = Enum.Parse<DelayMode>(
+                    effect.ShortName),
+
+                Feedback = effect.Parameters.Single(
+                    parameter =>
+                        parameter.Name == "Feedback")
+                    .Value / 100,
+
+                Mix = effect.Parameters.Single(
+                    parameter =>
+                        parameter.Name == "Mix")
+                    .Value / 100,
+
+                WetLevel = effect.Parameters.Single(
+                    parameter =>
+                        parameter.Name == "Level")
+                    .Value / 100
+            };
+        }
+        finally
+        {
+            _updatingDelayControls = false;
+        }
     }
 
     public bool ToggleFootswitchEffect(
@@ -397,6 +676,7 @@ public partial class TonePage :
             return false;
 
         ApplyQuickPreset(mode);
+
         return true;
     }
 
@@ -412,7 +692,8 @@ public partial class TonePage :
         foreach (var parameter in effect.Parameters)
         {
             parameter.Value = preset.Parameters
-                .First(item => item.Name == parameter.Name)
+                .First(
+                    item => item.Name == parameter.Name)
                 .DefaultValue;
         }
     }
@@ -438,10 +719,21 @@ public partial class TonePage :
             ResetDrivePreset(a, "SD-1");
             ResetDrivePreset(b, "RAT");
 
-            a.IsEnabled = mode is "Sd1" or "Stack";
-            b.IsEnabled = mode is "Rat" or "Stack";
+            Effects.Single(
+                effect => effect.SlotName == "DELAY")
+                .IsEnabled = false;
 
-            amp.IsEnabled = mode != "Raw";
+            _delayRevision++;
+
+            a.IsEnabled =
+                mode is "Sd1" or "Stack";
+
+            b.IsEnabled =
+                mode is "Rat" or "Stack";
+
+            amp.IsEnabled =
+                mode != "Raw";
+
             output.IsEnabled = true;
 
             var defaults = ToneSettings.Default;
@@ -474,6 +766,7 @@ public partial class TonePage :
         finally
         {
             _applyingPreset = false;
+
             ObserveParameters();
             SynchronizeAudioSettings();
         }
@@ -486,7 +779,13 @@ public partial class TonePage :
         MessageBox.Show(
             "DRIVE AまたはDRIVE Bを選択して、\n" +
             "エフェクト種類を変更できます。\n\n" +
-            "対応機種：SD-1 / RAT / TS9 / BD-2 / DS-1\n\n" +
+            "対応機種：SD-1 / RAT / TS9 / BD-2 / DS-1\n" +
+            "DELAY：Digital / Analog / Tape。AMP後に処理します。\n" +
+            "Time 20～2000ms、Feedback 0～95％、Mix 0～100％。\n" +
+            "時間モード：TIMEはms指定、TEMPOはBPM30～300と音符から計算します。\n" +
+            "Levelは反復音だけの音量です。原音とFeedback量には影響しません。\n" +
+            "2000msを超える組み合わせは適用・保存せず、直前の有効Timeを維持します。\n" +
+            "DelayをOFFにしても残響は自然に減衰します。\n\n" +
             "選択したエフェクトをONにすると音に反映されます。\n" +
             "ノブは上下ドラッグ、ホイール、矢印キーで調整できます。\n\n" +
             "RATのFilterは上げるほど暗くなります。\n" +
@@ -497,7 +796,7 @@ public partial class TonePage :
             "DRIVE A/Bはドラッグで順序を交換できます。\n" +
             "種類を変更するとノブは初期値に戻ります。\n" +
             "OUTPUTのLevelは全体の音量です。\n\n" +
-            "ユーザー音色のDB保存・読込はまだ接続していません。",
+            "音色の保存・読込は画面上部から操作できます。",
             "音作り");
     }
 

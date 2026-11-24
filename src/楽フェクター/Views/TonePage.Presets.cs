@@ -9,7 +9,11 @@ namespace FXForge.Views;
 
 public partial class TonePage
 {
-    public SavedTone CapturePreset()
+    public SavedTone CapturePreset() =>
+        CapturePresetCore(true);
+
+    private SavedTone CapturePresetCore(
+        bool rejectInvalidTiming)
     {
         Dispatcher.VerifyAccess();
 
@@ -17,6 +21,16 @@ public partial class TonePage
         EffectItem b = Slot("DRIVE B");
         EffectItem amp = Slot("AMP");
         EffectItem output = Slot("OUTPUT");
+
+        var delaySettings =
+            ReadDelay(Slot("DELAY"));
+
+        if (rejectInvalidTiming &&
+            !_delayTimingValid)
+        {
+            throw new InvalidOperationException(
+                _delayTimingStatus);
+        }
 
         var settings = new ToneSettings(
             ReadDrive(a),
@@ -32,7 +46,10 @@ public partial class TonePage
             {
                 High = Value(amp, "High")
             },
-            Value(output, "Level"));
+            Value(output, "Level"))
+        {
+            Delay = delaySettings
+        };
 
         var result = new SavedTone(
             settings,
@@ -43,14 +60,16 @@ public partial class TonePage
         return result;
     }
 
-    public void ApplySavedPreset(SavedTone preset)
+    public void ApplySavedPreset(
+        SavedTone preset)
     {
         Dispatcher.VerifyAccess();
 
         RakufekutaDatabase.Validate(preset);
         VerifyPresetUi();
 
-        SavedTone previous = CapturePreset();
+        SavedTone previous =
+            CapturePresetCore(false);
 
         _applyingPreset = true;
 
@@ -59,6 +78,7 @@ public partial class TonePage
             try
             {
                 ApplyPresetCore(preset);
+                _delayRevision++;
             }
             catch
             {
@@ -69,6 +89,7 @@ public partial class TonePage
         finally
         {
             _applyingPreset = false;
+
             ObserveParameters();
             SynchronizeAudioSettings();
         }
@@ -82,14 +103,21 @@ public partial class TonePage
 
     private void VerifyPresetUi()
     {
-        foreach (string slot in new[] { "DRIVE A", "DRIVE B" })
+        foreach (string slot in new[]
+        {
+            "DRIVE A",
+            "DRIVE B"
+        })
         {
             var effect = Slot(slot);
 
-            foreach (DriveKind kind in Enum.GetValues<DriveKind>())
+            foreach (DriveKind kind in
+                     Enum.GetValues<DriveKind>())
             {
-                var definition = effect.AvailablePresets.Single(
-                    preset => preset.ShortName == DriveName(kind));
+                var definition =
+                    effect.AvailablePresets.Single(
+                        preset =>
+                            preset.ShortName == DriveName(kind));
 
                 if (definition.Parameters.Count != 3)
                 {
@@ -101,18 +129,46 @@ public partial class TonePage
 
         foreach (string name in new[]
         {
-            "Gain", "Bass", "Middle", "High", "Treble", "Level"
+            "Gain",
+            "Bass",
+            "Middle",
+            "High",
+            "Treble",
+            "Level"
         })
         {
             _ = Slot("AMP").Parameters.Single(
                 parameter => parameter.Name == name);
         }
 
+        foreach (string name in new[]
+        {
+            "Time",
+            "BPM",
+            "Note",
+            "Feedback",
+            "Mix",
+            "Level"
+        })
+        {
+            _ = Slot("DELAY").Parameters.Single(
+                parameter => parameter.Name == name);
+        }
+
+        foreach (DelayMode mode in
+                 Enum.GetValues<DelayMode>())
+        {
+            _ = Slot("DELAY").AvailablePresets.Single(
+                preset =>
+                    preset.ShortName == mode.ToString());
+        }
+
         _ = Slot("OUTPUT").Parameters.Single(
             parameter => parameter.Name == "Level");
     }
 
-    private void ApplyPresetCore(SavedTone preset)
+    private void ApplyPresetCore(
+        SavedTone preset)
     {
         var settings = preset.Settings;
 
@@ -147,11 +203,13 @@ public partial class TonePage
         foreach (var value in values)
         {
             amp.Parameters.Single(
-                parameter => parameter.Name == value.Key)
+                parameter =>
+                    parameter.Name == value.Key)
                 .Value = value.Value * 100;
         }
 
-        amp.IsEnabled = settings.Amp.Enabled;
+        amp.IsEnabled =
+            settings.Amp.Enabled;
 
         var output = Slot("OUTPUT");
 
@@ -159,30 +217,89 @@ public partial class TonePage
             parameter => parameter.Name == "Level")
             .Value = settings.OutputLevel * 100;
 
-        output.IsEnabled = preset.OutputEnabled;
+        output.IsEnabled =
+            preset.OutputEnabled;
+
+        var delay = Slot("DELAY");
+
+        delay.SelectedPreset =
+            delay.AvailablePresets.Single(
+                definition =>
+                    definition.ShortName ==
+                    settings.Delay.Mode.ToString());
+
+        _delayManualTimeMs =
+            settings.Delay.TimeMilliseconds;
+
+        _delaySelectedNote =
+            settings.Delay.Note;
+
+        _delayTempoMode =
+            settings.Delay.Note != DelayNote.Manual;
+
+        OnPropertyChanged(nameof(IsTimeMode));
+        OnPropertyChanged(nameof(IsTempoMode));
+
+        delay.Parameters.Single(
+            parameter => parameter.Name == "BPM")
+            .Value = settings.Delay.TempoBpm;
+
+        delay.Parameters.Single(
+            parameter => parameter.Name == "Note")
+            .Value = settings.Delay.Note == DelayNote.Manual
+                ? 3
+                : (int)settings.Delay.Note - 1;
+
+        delay.Parameters.Single(
+            parameter => parameter.Name == "Time")
+            .Value =
+                settings.Delay.EffectiveTimeMilliseconds;
+
+        delay.Parameters.Single(
+            parameter => parameter.Name == "Feedback")
+            .Value = settings.Delay.Feedback * 100;
+
+        delay.Parameters.Single(
+            parameter => parameter.Name == "Mix")
+            .Value = settings.Delay.Mix * 100;
+
+        delay.Parameters.Single(
+            parameter => parameter.Name == "Level")
+            .Value = settings.Delay.WetLevel * 100;
+
+        delay.IsEnabled =
+            settings.Delay.Enabled;
     }
 
     private static void ApplyDrive(
         EffectItem effect,
         DriveSettings settings)
     {
-        effect.SelectedPreset = effect.AvailablePresets.Single(
-            preset => preset.ShortName == DriveName(settings.Kind));
+        effect.SelectedPreset =
+            effect.AvailablePresets.Single(
+                preset =>
+                    preset.ShortName ==
+                    DriveName(settings.Kind));
 
         string gainName = settings.Kind switch
         {
-            DriveKind.Rat or DriveKind.Ds1 => "Distortion",
+            DriveKind.Rat or DriveKind.Ds1 =>
+                "Distortion",
+
             DriveKind.Bd2 => "Gain",
+
             _ => "Drive"
         };
 
-        string toneName = settings.Kind == DriveKind.Rat
-            ? "Filter"
-            : "Tone";
+        string toneName =
+            settings.Kind == DriveKind.Rat
+                ? "Filter"
+                : "Tone";
 
-        string levelName = settings.Kind == DriveKind.Rat
-            ? "Volume"
-            : "Level";
+        string levelName =
+            settings.Kind == DriveKind.Rat
+                ? "Volume"
+                : "Level";
 
         effect.Parameters.Single(
             parameter => parameter.Name == gainName)
@@ -196,10 +313,12 @@ public partial class TonePage
             parameter => parameter.Name == levelName)
             .Value = settings.Level * 100;
 
-        effect.IsEnabled = settings.Enabled;
+        effect.IsEnabled =
+            settings.Enabled;
     }
 
-    private static string DriveName(DriveKind kind)
+    private static string DriveName(
+        DriveKind kind)
     {
         return kind switch
         {
@@ -209,7 +328,8 @@ public partial class TonePage
             DriveKind.Bd2 => "BD-2",
             DriveKind.Ds1 => "DS-1",
 
-            _ => throw new ArgumentOutOfRangeException(nameof(kind))
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(kind))
         };
     }
 }

@@ -17,6 +17,7 @@
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="14,8"/>
             <Setter Property="Cursor" Value="Hand"/>
+
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -26,23 +27,33 @@
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="6">
+
                             <ContentPresenter
                                 Margin="{TemplateBinding Padding}"
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center"/>
                         </Border>
+
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder"
-                                        Property="Background" Value="#26384A"/>
+                                <Setter
+                                    TargetName="ButtonBorder"
+                                    Property="Background"
+                                    Value="#26384A"/>
                             </Trigger>
+
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="ButtonBorder"
-                                        Property="Background" Value="#334D65"/>
+                                <Setter
+                                    TargetName="ButtonBorder"
+                                    Property="Background"
+                                    Value="#334D65"/>
                             </Trigger>
+
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="ButtonBorder"
-                                        Property="Opacity" Value="0.45"/>
+                                <Setter
+                                    TargetName="ButtonBorder"
+                                    Property="Opacity"
+                                    Value="0.45"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -58,6 +69,7 @@
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -67,19 +79,26 @@
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="10">
+
                             <ContentPresenter
                                 Margin="{TemplateBinding Padding}"
                                 HorizontalAlignment="Stretch"
                                 VerticalAlignment="Stretch"/>
                         </Border>
+
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="CardBorder"
-                                        Property="Background" Value="#203040"/>
+                                <Setter
+                                    TargetName="CardBorder"
+                                    Property="Background"
+                                    Value="#203040"/>
                             </Trigger>
+
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="CardBorder"
-                                        Property="Background" Value="#2B4054"/>
+                                <Setter
+                                    TargetName="CardBorder"
+                                    Property="Background"
+                                    Value="#2B4054"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -123,6 +142,7 @@
                                 FontSize="15"
                                 FontWeight="SemiBold"
                                 Foreground="#AABCCD"/>
+
                             <TextBlock
                                 Margin="0,6,0,0"
                                 Text="カードを選択して編集します。DRIVE A / Bはドラッグで順序を交換できます。"
@@ -169,6 +189,7 @@
                                                     Height="8"
                                                     Margin="5,0,0,0"
                                                     Fill="{Binding ActiveAccentBrush}"/>
+
                                                 <TextBlock
                                                     Text="{Binding Category}"
                                                     Foreground="{Binding ActiveAccentBrush}"
@@ -221,6 +242,7 @@
                         <RowDefinition Height="1"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <Grid Grid.Row="0" Margin="0,0,0,16">
@@ -241,12 +263,14 @@
                                 Text="{Binding SelectedEffect.SlotName}"
                                 Foreground="#8BA0B3"
                                 FontSize="12"/>
+
                             <TextBlock
                                 Margin="0,4,0,4"
                                 Text="{Binding SelectedEffect.ShortName}"
                                 FontSize="30"
                                 FontWeight="SemiBold"
                                 TextTrimming="CharacterEllipsis"/>
+
                             <TextBlock
                                 Text="{Binding SelectedEffect.Name}"
                                 Foreground="#A8BACB"
@@ -257,11 +281,13 @@
                         <StackPanel
                             Grid.Column="3"
                             VerticalAlignment="Center">
+
                             <TextBlock
                                 Margin="0,0,0,8"
                                 Text="ON / OFF"
                                 Foreground="#8BA0B3"
                                 FontSize="12"/>
+
                             <CheckBox
                                 Content="ON"
                                 Foreground="#EDF2F7"
@@ -272,7 +298,7 @@
                         </StackPanel>
                     </Grid>
 
-                    <!-- 歪みの種類選択 -->
+                    <!-- エフェクト種類とモード切替を横並びに配置 -->
                     <WrapPanel
                         Grid.Row="1"
                         Margin="0,0,0,12"
@@ -299,9 +325,60 @@
                             Background="#E6E6E6"
                             Foreground="#172331"
                             FontSize="15"/>
+
+                        <StackPanel
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="24,0,0,8">
+
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter
+                                        Property="Visibility"
+                                        Value="Collapsed"/>
+
+                                    <Style.Triggers>
+                                        <DataTrigger
+                                            Binding="{Binding SelectedEffect.SlotName}"
+                                            Value="DELAY">
+
+                                            <Setter
+                                                Property="Visibility"
+                                                Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+
+                            <TextBlock
+                                Text="モード切替"
+                                Foreground="#A8BACB"
+                                FontSize="14"
+                                VerticalAlignment="Center"
+                                Margin="0,0,14,0"/>
+
+                            <RadioButton
+                                Content="TIME"
+                                GroupName="DelayTiming"
+                                Foreground="#EDF2F7"
+                                FontSize="16"
+                                VerticalAlignment="Center"
+                                Margin="0,0,20,0"
+                                IsChecked="{Binding IsTimeMode, Mode=TwoWay}"/>
+
+                            <RadioButton
+                                Content="TEMPO"
+                                GroupName="DelayTiming"
+                                Foreground="#EDF2F7"
+                                FontSize="16"
+                                VerticalAlignment="Center"
+                                IsChecked="{Binding IsTempoMode, Mode=TwoWay}"/>
+                        </StackPanel>
                     </WrapPanel>
 
-                    <Border Grid.Row="2" Background="#2B3948"/>
+                    <Border
+                        Grid.Row="2"
+                        Background="#2B3948"/>
 
                     <!-- ノブ -->
                     <ItemsControl
@@ -323,6 +400,67 @@
                                     Margin="6,8,6,20"
                                     HorizontalAlignment="Center">
 
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Style.Triggers>
+
+                                                <!-- TEMPOではTimeノブを非表示 -->
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition
+                                                            Binding="{Binding Name}"
+                                                            Value="Time"/>
+
+                                                        <Condition
+                                                            Binding="{Binding DataContext.IsTempoMode,
+                                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            Value="True"/>
+                                                    </MultiDataTrigger.Conditions>
+
+                                                    <Setter
+                                                        Property="Visibility"
+                                                        Value="Collapsed"/>
+                                                </MultiDataTrigger>
+
+                                                <!-- TIMEではBPMノブを非表示 -->
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition
+                                                            Binding="{Binding Name}"
+                                                            Value="BPM"/>
+
+                                                        <Condition
+                                                            Binding="{Binding DataContext.IsTimeMode,
+                                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            Value="True"/>
+                                                    </MultiDataTrigger.Conditions>
+
+                                                    <Setter
+                                                        Property="Visibility"
+                                                        Value="Collapsed"/>
+                                                </MultiDataTrigger>
+
+                                                <!-- TIMEでは音符ノブを非表示 -->
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition
+                                                            Binding="{Binding Name}"
+                                                            Value="Note"/>
+
+                                                        <Condition
+                                                            Binding="{Binding DataContext.IsTimeMode,
+                                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            Value="True"/>
+                                                    </MultiDataTrigger.Conditions>
+
+                                                    <Setter
+                                                        Property="Visibility"
+                                                        Value="Collapsed"/>
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+
                                     <controls:Knob
                                         Width="150"
                                         Height="150"
@@ -330,6 +468,9 @@
                                         Value="{Binding Value,
                                                         Mode=TwoWay,
                                                         UpdateSourceTrigger=PropertyChanged}"
+                                        Step="{Binding Step}"
+                                        DisplayText="{Binding KnobText}"
+                                        IsEnabled="{Binding IsEditable}"
                                         Minimum="{Binding Minimum}"
                                         Maximum="{Binding Maximum}"
                                         Accent="{Binding DataContext.SelectedEffect.ActiveAccentBrush,
@@ -361,6 +502,33 @@
                         Foreground="#8195A8"
                         FontSize="12"
                         TextWrapping="Wrap"/>
+
+                    <TextBlock
+                        Grid.Row="5"
+                        Margin="0,8,0,0"
+                        TextWrapping="Wrap"
+                        Text="{Binding DelayTimingStatus}"
+                        Foreground="{Binding DelayTimingStatusBrush}">
+
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter
+                                    Property="Visibility"
+                                    Value="Collapsed"/>
+
+                                <Style.Triggers>
+                                    <DataTrigger
+                                        Binding="{Binding SelectedEffect.SlotName}"
+                                        Value="DELAY">
+
+                                        <Setter
+                                            Property="Visibility"
+                                            Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </Grid>
             </Border>
         </Grid>
