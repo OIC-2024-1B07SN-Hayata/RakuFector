@@ -5,7 +5,9 @@
     xmlns:controls="clr-namespace:FXForge.Controls"
     Background="#0B1016"
     Foreground="#EDF2F7"
-    FontFamily="Segoe UI">
+    FontFamily="Segoe UI"
+    Loaded="XyPage_Loaded"
+    Unloaded="XyPage_Unloaded">
 
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="ToneBoolToVisibility"/>
@@ -105,9 +107,46 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <DataTemplate x:Key="XyKnobTemplate">
+            <StackPanel Width="130" Margin="4,6,4,10">
+                <controls:Knob Width="120" Height="120" HorizontalAlignment="Center"
+                    Value="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    Minimum="{Binding Minimum}" Maximum="{Binding Maximum}"
+                    Step="{Binding Step}" DisplayText="{Binding KnobText}"
+                    IsEnabled="{Binding IsEditable}"
+                    Accent="{Binding DataContext.SelectedEffect.ActiveAccentBrush, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"/>
+                <TextBlock Text="{Binding Name}" FontSize="12" Foreground="#EDF2F7"
+                           Margin="0,4,0,0" HorizontalAlignment="Center"/>
+            </StackPanel>
+        </DataTemplate>
+        <!-- XYに連動する2個だけ、大きく表示する -->
+        <DataTemplate x:Key="XyLinkedKnobTemplate">
+            <StackPanel Width="130" Margin="4,6,4,10">
+                <controls:Knob
+            Width="130"
+            Height="130"
+            HorizontalAlignment="Center"
+            Value="{Binding Value, Mode=TwoWay,
+                            UpdateSourceTrigger=PropertyChanged}"
+            Minimum="{Binding Minimum}"
+            Maximum="{Binding Maximum}"
+            Step="{Binding Step}"
+            DisplayText="{Binding KnobText}"
+            IsEnabled="{Binding IsEditable}"
+            Accent="{Binding DataContext.SelectedEffect.ActiveAccentBrush,
+                RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"/>
+
+                <TextBlock
+            Text="{Binding Name}"
+            FontSize="12"
+            Foreground="#EDF2F7"
+            Margin="0,4,0,0"
+            HorizontalAlignment="Center"/>
+            </StackPanel>
+        </DataTemplate>
     </UserControl.Resources>
 
-    <ScrollViewer
+    <ScrollViewer x:Name="ToneScrollViewer" SizeChanged="ToneScrollViewer_SizeChanged"
         VerticalScrollBarVisibility="Auto"
         HorizontalScrollBarVisibility="Disabled">
 
@@ -119,7 +158,7 @@
             </Grid.RowDefinitions>
 
             <!-- シグナルチェーン -->
-            <Border
+            <Border x:Name="ToneSignalChain"
                 Grid.Row="0"
                 Padding="20"
                 Background="#101720"
@@ -235,7 +274,12 @@
                 BorderThickness="1"
                 CornerRadius="14">
 
-                <Grid>
+                <Grid x:Name="XyEditor" SizeChanged="XyEditor_SizeChanged">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="0"/>
+                        <ColumnDefinition Width="0"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -245,7 +289,11 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <Grid Grid.Row="0" Margin="0,0,0,16">
+                    <Grid Panel.ZIndex="2" x:Name="XyEditorHeader" Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="6"/>
                             <ColumnDefinition Width="16"/>
@@ -278,7 +326,7 @@
                                 TextWrapping="Wrap"/>
                         </StackPanel>
 
-                        <StackPanel
+                        <StackPanel x:Name="XyHeaderActions"
                             Grid.Column="3"
                             VerticalAlignment="Center">
 
@@ -295,25 +343,33 @@
                                 IsChecked="{Binding SelectedEffect.IsEnabled,
                                                     Mode=TwoWay,
                                                     UpdateSourceTrigger=PropertyChanged}"/>
+                            <Button x:Name="XyModeButton"
+                                    Margin="0,12,0,0"
+                                    Style="{StaticResource ToneButton}"
+                                    FontSize="12" Content="XY操作"
+                                    Visibility="Collapsed"
+                                    Click="XyModeButton_Click"/>
                         </StackPanel>
+
                     </Grid>
 
                     <!-- エフェクト種類とモード切替を横並びに配置 -->
-                    <WrapPanel
+                    <WrapPanel x:Name="XyTypeSelector" Grid.ColumnSpan="3"
                         Grid.Row="1"
-                        Margin="0,0,0,12"
+                        Margin="0"
                         Visibility="{Binding SelectedEffect.HasTypeChoices,
                                              Converter={StaticResource ToneBoolToVisibility}}">
+
 
                         <TextBlock
                             Margin="0,0,14,8"
                             VerticalAlignment="Center"
                             Text="エフェクト種類"
                             Foreground="#A8BACB"
-                            FontSize="14"/>
+                            FontSize="12"/>
 
                         <ComboBox
-                            Width="230"
+                            Width="210"
                             MinHeight="34"
                             Margin="0,0,0,8"
                             VerticalContentAlignment="Center"
@@ -324,7 +380,8 @@
                             DisplayMemberPath="ShortName"
                             Background="#E6E6E6"
                             Foreground="#172331"
-                            FontSize="15"/>
+                            FontSize="12"/>
+
 
                         <StackPanel
                             Orientation="Horizontal"
@@ -376,92 +433,126 @@
                         </StackPanel>
                     </WrapPanel>
 
-                    <Border
+                    <Border x:Name="XyEditorDivider" Grid.ColumnSpan="3"
                         Grid.Row="2"
                         Background="#2B3948"/>
 
-                    <!-- ノブ -->
-                    <ItemsControl
-                        Grid.Row="3"
+                    <Grid x:Name="XyArea" Visibility="Collapsed" Grid.Column="2" Grid.Row="0" Grid.RowSpan="6"
+                              Margin="0" SizeChanged="XyArea_SizeChanged">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="150"/>
+                            <ColumnDefinition Width="24"/>
+                            <ColumnDefinition Width="150"/>
+                        </Grid.ColumnDefinitions>
+                        <!-- 左：描画領域を正方形にするXYグラフ -->
+                        <Canvas x:Name="XyCanvas" Height="486" Grid.Column="0"
+                                Margin="0,0,20,0" Background="#10191F" ClipToBounds="True"
+                                Focusable="True" Cursor="Cross"
+                                AutomationProperties.Name="XY操作"
+                                SizeChanged="XyCanvas_SizeChanged"
+                                MouseLeftButtonDown="XyCanvas_MouseLeftButtonDown"
+                                MouseMove="XyCanvas_MouseMove"
+                                MouseLeftButtonUp="XyCanvas_MouseLeftButtonUp"
+                                KeyDown="XyCanvas_KeyDown"/>
+                        <!-- 中：XYに連動する2個を縦に並べる -->
+                        <ItemsControl x:Name="XyKnobs" Grid.Column="1"
+                            VerticalAlignment="Center" HorizontalContentAlignment="Center"
+                            ItemTemplate="{StaticResource XyLinkedKnobTemplate}"/>
+                        <!-- 右：ToneまたはFilterを個別操作 -->
+                        <ItemsControl x:Name="XyIndependentKnobs" Grid.Column="3"
+                                VerticalAlignment="Center" HorizontalContentAlignment="Center"
+                                ItemTemplate="{StaticResource XyKnobTemplate}"/>
+                    </Grid>
+
+                    <!-- 通常ノブとXY操作を切替 -->
+                    <Grid Grid.Row="3" Grid.ColumnSpan="3">
+                        <Grid x:Name="NormalKnobArea">
+
+                            <ItemsControl
                         Margin="0,24,0,12"
                         HorizontalAlignment="Stretch"
                         ItemsSource="{Binding SelectedEffect.Parameters}">
 
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel HorizontalAlignment="Center"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel HorizontalAlignment="Center"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
 
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel
                                     Width="174"
                                     Margin="6,8,6,20"
                                     HorizontalAlignment="Center">
 
-                                    <StackPanel.Style>
-                                        <Style TargetType="StackPanel">
-                                            <Style.Triggers>
+                                            <StackPanel.Style>
+                                                <Style TargetType="StackPanel">
+                                                    <Style.Triggers>
 
-                                                <!-- TEMPOではTimeノブを非表示 -->
-                                                <MultiDataTrigger>
-                                                    <MultiDataTrigger.Conditions>
-                                                        <Condition
+                                                        <!-- TEMPOではTimeノブを非表示 -->
+                                                        <MultiDataTrigger>
+                                                            <MultiDataTrigger.Conditions>
+                                                                <Condition
                                                             Binding="{Binding Name}"
                                                             Value="Time"/>
 
-                                                        <Condition
+                                                                <Condition
                                                             Binding="{Binding DataContext.IsTempoMode,
                                                                               RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                             Value="True"/>
-                                                    </MultiDataTrigger.Conditions>
+                                                            </MultiDataTrigger.Conditions>
 
-                                                    <Setter
+                                                            <Setter
                                                         Property="Visibility"
                                                         Value="Collapsed"/>
-                                                </MultiDataTrigger>
+                                                        </MultiDataTrigger>
 
-                                                <!-- TIMEではBPMノブを非表示 -->
-                                                <MultiDataTrigger>
-                                                    <MultiDataTrigger.Conditions>
-                                                        <Condition
+                                                        <!-- TIMEではBPMノブを非表示 -->
+                                                        <MultiDataTrigger>
+                                                            <MultiDataTrigger.Conditions>
+                                                                <Condition
                                                             Binding="{Binding Name}"
                                                             Value="BPM"/>
 
-                                                        <Condition
+                                                                <Condition
                                                             Binding="{Binding DataContext.IsTimeMode,
                                                                               RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                             Value="True"/>
-                                                    </MultiDataTrigger.Conditions>
+                                                            </MultiDataTrigger.Conditions>
 
-                                                    <Setter
+                                                            <Setter
                                                         Property="Visibility"
                                                         Value="Collapsed"/>
-                                                </MultiDataTrigger>
+                                                        </MultiDataTrigger>
 
-                                                <!-- TIMEでは音符ノブを非表示 -->
-                                                <MultiDataTrigger>
-                                                    <MultiDataTrigger.Conditions>
-                                                        <Condition
+                                                        <!-- TIMEでは音符ノブを非表示 -->
+                                                        <MultiDataTrigger>
+                                                            <MultiDataTrigger.Conditions>
+                                                                <Condition
                                                             Binding="{Binding Name}"
                                                             Value="Note"/>
 
-                                                        <Condition
+                                                                <Condition
                                                             Binding="{Binding DataContext.IsTimeMode,
                                                                               RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                             Value="True"/>
-                                                    </MultiDataTrigger.Conditions>
+                                                            </MultiDataTrigger.Conditions>
 
-                                                    <Setter
+                                                            <Setter
                                                         Property="Visibility"
                                                         Value="Collapsed"/>
-                                                </MultiDataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </StackPanel.Style>
+                                                        </MultiDataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </StackPanel.Style>
 
-                                    <controls:Knob
+                                            <controls:Knob
                                         Width="150"
                                         Height="150"
                                         HorizontalAlignment="Center"
@@ -476,7 +567,7 @@
                                         Accent="{Binding DataContext.SelectedEffect.ActiveAccentBrush,
                                                          RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"/>
 
-                                    <TextBlock
+                                            <TextBlock
                                         Margin="0,12,0,0"
                                         HorizontalAlignment="Center"
                                         Text="{Binding Name}"
@@ -484,18 +575,22 @@
                                         FontSize="17"
                                         FontWeight="SemiBold"/>
 
-                                    <TextBlock
+                                            <TextBlock
                                         Margin="0,4,0,0"
                                         HorizontalAlignment="Center"
                                         Text="{Binding Unit}"
                                         Foreground="#8195A8"
                                         FontSize="12"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
 
-                    <TextBlock
+                        </Grid>
+
+                    </Grid>
+
+                    <TextBlock x:Name="XyHelpText" Grid.ColumnSpan="3"
                         Grid.Row="4"
                         Margin="0,6,0,0"
                         Text="ノブ：上下ドラッグ・マウスホイール・矢印キーで調整"
@@ -503,7 +598,7 @@
                         FontSize="12"
                         TextWrapping="Wrap"/>
 
-                    <TextBlock
+                    <TextBlock Grid.ColumnSpan="3"
                         Grid.Row="5"
                         Margin="0,8,0,0"
                         TextWrapping="Wrap"
