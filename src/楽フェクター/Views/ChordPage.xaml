@@ -160,6 +160,64 @@
                 <Setter Property="Margin" Value="0,0,0,6"/>
             </Style>
 
+            <!-- 指板 open / close button in the timeline header; highlighted while the panel is open. -->
+            <Style x:Key="PanelToggle" TargetType="ToggleButton">
+                <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+                <Setter Property="Background" Value="{DynamicResource ControlBackground}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource ControlBorder}"/>
+                <Setter Property="FontSize" Value="15"/>
+                <Setter Property="Height" Value="44"/>
+                <Setter Property="Padding" Value="14,0"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ToggleButton">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlHover}"/>
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Playhead}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Segmented tabs of the fretboard panel (コードフォーム / スケール). -->
+            <Style x:Key="SegmentTab" TargetType="RadioButton">
+                <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+                <Setter Property="FontSize" Value="14"/>
+                <Setter Property="Height" Value="34"/>
+                <Setter Property="MinWidth" Value="96"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="RadioButton">
+                            <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="14,0">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource ControlHover}"/>
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource FretScaleNote}"/>
+                                    <Setter Property="Foreground" Value="White"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <!-- Sidebar item: icon above the label; the checked one is highlighted. -->
             <Style x:Key="NavItem" TargetType="RadioButton">
                 <Setter Property="Foreground" Value="{DynamicResource SidebarText}"/>
@@ -465,13 +523,38 @@
                     </TabControl>
                 </Border>
 
-                <Grid Grid.Column="2">
+                <!-- Timeline on top, chord sheet in the remaining space, fretboard panel fixed at the bottom
+                     (it grows upwards and the chord sheet gives way) -->
+                <Grid Grid.Column="2" x:Name="RightColumn" SizeChanged="OnFretboardSpaceChanged">
                 <Grid.RowDefinitions>
+                    <!-- Timeline and chord sheet share the space above the panel (the timeline gets more) and shrink as it grows -->
+                    <RowDefinition Height="2*"/>
+                    <RowDefinition>
+                        <RowDefinition.Style>
+                            <Style TargetType="RowDefinition">
+                                <Setter Property="Height" Value="*"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasBars}" Value="False">
+                                        <Setter Property="Height" Value="0"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </RowDefinition.Style>
+                    </RowDefinition>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 <!-- Timeline -->
-                <Border Grid.Row="0" Style="{StaticResource Card}" ClipToBounds="True" VerticalAlignment="Top">
+                <Border x:Name="TimelineCard" Grid.Row="0" ClipToBounds="True">
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource Card}">
+                            <Style.Triggers>
+                                <!-- Closed while the fretboard panel is enlarged over it -->
+                                <DataTrigger Binding="{Binding IsTimelineHidden}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <DockPanel>
                         <!-- Header: title and the key of the whole performance (shown once the analysis has finished). -->
                         <Grid DockPanel.Dock="Top" Height="48" Margin="20,12,20,0">
@@ -479,7 +562,27 @@
                                 <TextBlock Text="" Style="{StaticResource Icon}" FontSize="20" Margin="0,0,10,0" Foreground="{DynamicResource TextSecondary}"/>
                                 <TextBlock Text="コード進行" Style="{StaticResource CardTitle}"/>
                             </StackPanel>
-                            <Border HorizontalAlignment="Right" VerticalAlignment="Center" Height="44" CornerRadius="6" ClipToBounds="True"
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <ToggleButton Style="{StaticResource PanelToggle}" Margin="0,0,12,0" IsChecked="{Binding IsFretboardOpen}"
+                                          ToolTip="指板（コードフォーム / スケール）を開く・閉じる。開いている間はコード進行を小さく表示します">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE8A1;" Style="{StaticResource Icon}" FontSize="15" Margin="0,0,8,0"/>
+                                    <TextBlock Text="指板" VerticalAlignment="Center"/>
+                                    <TextBlock FontSize="11" Margin="8,2,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource Icon}">
+                                                <Setter Property="Text" Value="&#xE70D;"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsFretboardOpen}" Value="True">
+                                                        <Setter Property="Text" Value="&#xE70E;"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </ToggleButton>
+                            <Border VerticalAlignment="Center" Height="44" CornerRadius="6" ClipToBounds="True"
                                     Background="{DynamicResource KeyBadgeBackground}" BorderBrush="{DynamicResource KeyBadgeBorder}" BorderThickness="1"
                                     Visibility="{Binding IsKeyVisible, Converter={StaticResource BoolToVisibility}}">
                                 <DockPanel>
@@ -491,6 +594,7 @@
                                     </StackPanel>
                                 </DockPanel>
                             </Border>
+                            </StackPanel>
                         </Grid>
 
                         <!-- Status / result (the blank area under the scroll bar in the design). -->
@@ -502,14 +606,28 @@
                             </TextBlock>
                         </StackPanel>
 
+                        <Grid>
                         <ScrollViewer x:Name="TimelineScroll" HorizontalScrollBarVisibility="Visible" VerticalScrollBarVisibility="Disabled"
                                       PreviewMouseWheel="OnTimelineMouseWheel" PreviewMouseLeftButtonDown="OnTimelinePanDown"
                                       PreviewMouseMove="OnTimelinePanMove" PreviewMouseLeftButtonUp="OnTimelinePanUp" LostMouseCapture="OnTimelinePanLostCapture">
-                            <Grid Width="{Binding TimelineWidth}" Height="436" HorizontalAlignment="Left">
+                            <!-- As tall as the card leaves (no fixed height): grows and shrinks with the space above the fretboard panel -->
+                            <Grid x:Name="TimelineGrid" Width="{Binding TimelineWidth}" HorizontalAlignment="Left" SizeChanged="OnTimelineGridSizeChanged">
                                 <Grid.RowDefinitions>
-                                    <RowDefinition Height="52"/>
-                                    <RowDefinition Height="*"/>
-                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="44"/>
+                                    <RowDefinition Height="2*"/>
+                                    <!-- Detected notes: hidden while the timeline is low (compact) -->
+                                    <RowDefinition>
+                                        <RowDefinition.Style>
+                                            <Style TargetType="RowDefinition">
+                                                <Setter Property="Height" Value="*"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsTimelineCompact}" Value="True">
+                                                        <Setter Property="Height" Value="0"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </RowDefinition.Style>
+                                    </RowDefinition>
                                 </Grid.RowDefinitions>
 
                                 <!-- Ruler: mm:ss every second -->
@@ -560,9 +678,12 @@
 
                                 <!-- Bar / beat / grid lines (小節に合わせる), styled after the drum editor: bars strongest, beats lighter,
                                      the thin grid lines start as ticks at the bottom of the ruler. Drawn before the chords so they stay behind them. Bar 1 is the first bar of the drums. -->
-                                <Path Grid.RowSpan="3" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Data="{Binding SubdivisionLines}" Stroke="{DynamicResource TextMuted}" StrokeThickness="1" Opacity="0.28"/>
-                                <Path Grid.RowSpan="3" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Data="{Binding BeatLines}" Stroke="{DynamicResource TextMuted}" StrokeThickness="1.5" Opacity="0.6"/>
-                                <Path Grid.RowSpan="3" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Data="{Binding BarLines}" Stroke="{DynamicResource TextSecondary}" StrokeThickness="2.5" Opacity="0.9"/>
+                                <!-- The lines are drawn long and cut at the timeline's height (a Canvas does not ask for their size) -->
+                                <Canvas Grid.RowSpan="3" ClipToBounds="True" IsHitTestVisible="False">
+                                    <Path Data="{Binding SubdivisionLines}" Stroke="{DynamicResource TextMuted}" StrokeThickness="1" Opacity="0.28"/>
+                                    <Path Data="{Binding BeatLines}" Stroke="{DynamicResource TextMuted}" StrokeThickness="1.5" Opacity="0.6"/>
+                                    <Path Data="{Binding BarLines}" Stroke="{DynamicResource TextSecondary}" StrokeThickness="2.5" Opacity="0.9"/>
+                                </Canvas>
 
                                 <!-- Loop range (dragged on the ruler): a light band over the lanes, stronger in the ruler; faded while the loop is off -->
                                 <Canvas Grid.RowSpan="3" IsHitTestVisible="False" Visibility="{Binding HasLoop, Converter={StaticResource BoolToVisibility}}">
@@ -576,13 +697,13 @@
                                             </Style.Triggers>
                                         </Style>
                                     </Canvas.Style>
-                                    <Rectangle Canvas.Left="{Binding LoopLeft}" Width="{Binding LoopWidth}" Height="436" Fill="{DynamicResource Playhead}" Opacity="0.12"/>
+                                    <Rectangle Canvas.Left="{Binding LoopLeft}" Width="{Binding LoopWidth}" Height="{Binding ActualHeight, ElementName=TimelineGrid}" Fill="{DynamicResource Playhead}" Opacity="0.12"/>
                                     <Rectangle Canvas.Left="{Binding LoopLeft}" Width="{Binding LoopWidth}" Height="52" Fill="{DynamicResource Playhead}" Opacity="0.35"/>
-                                    <Border Canvas.Left="{Binding LoopLeft}" Width="{Binding LoopWidth}" Height="436" BorderBrush="{DynamicResource Playhead}" BorderThickness="2,0,2,0"/>
+                                    <Border Canvas.Left="{Binding LoopLeft}" Width="{Binding LoopWidth}" Height="{Binding ActualHeight, ElementName=TimelineGrid}" BorderBrush="{DynamicResource Playhead}" BorderThickness="2,0,2,0"/>
                                 </Canvas>
 
                                 <!-- Chords: position and width follow time -->
-                                <ItemsControl Grid.Row="1" ItemsSource="{Binding Chords}" Margin="0,16,0,8">
+                                <ItemsControl Grid.Row="1" ItemsSource="{Binding Chords}" Margin="0,8,0,4">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate><Canvas/></ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
@@ -593,14 +714,70 @@
                                     </ItemsControl.ItemContainerStyle>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type vm:ChordRowViewModel}">
-                                            <Border Width="{Binding Width}" Height="150" Background="{Binding Color}" CornerRadius="6" Padding="12,10" ToolTip="{Binding ToolTip}" Cursor="Hand" MouseLeftButtonUp="OnChordClicked">
+                                            <!-- Fills the chord row; smaller text (name, degree, shape only) while the timeline is low -->
+                                            <Border Width="{Binding Width}" Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Background="{Binding Color}" CornerRadius="6" ToolTip="{Binding ToolTip}" Cursor="Hand" MouseLeftButtonUp="OnChordClicked">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Padding" Value="10,6"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding DataContext.IsTimelineCompact, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="True">
+                                                                <Setter Property="Padding" Value="8,3"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
                                                 <StackPanel>
-                                                    <TextBlock Text="{Binding Name}" Foreground="White" FontSize="30" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Name}" Foreground="White" FontWeight="Bold" TextTrimming="CharacterEllipsis">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="FontSize" Value="24"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding DataContext.IsTimelineCompact, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="True">
+                                                                        <Setter Property="FontSize" Value="18"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
                                                     <!-- コード名＋ディグリー: the degree below the name -->
-                                                    <TextBlock Text="{Binding Degree}" Foreground="#F0FFFFFF" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Visibility="{Binding HasDegree, Converter={StaticResource BoolToVisibility}}"/>
-                                                    <TextBlock Text="{Binding StartText}" Foreground="#E0FFFFFF" FontSize="13" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Degree}" Foreground="#F0FFFFFF" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Visibility="{Binding HasDegree, Converter={StaticResource BoolToVisibility}}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="FontSize" Value="15"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding DataContext.IsTimelineCompact, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="True">
+                                                                        <Setter Property="FontSize" Value="12"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock Text="{Binding StartText}" Foreground="#E0FFFFFF" FontSize="12" Margin="0,2,0,0" TextTrimming="CharacterEllipsis">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding DataContext.IsTimelineCompact, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
                                                     <!-- With a capo: the shape to fret -->
-                                                    <TextBlock Text="{Binding ShapeText}" Foreground="White" FontSize="15" FontWeight="SemiBold" Margin="0,10,0,0" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding ShapeText}" Foreground="White" FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="FontSize" Value="14"/>
+                                                                <Setter Property="Margin" Value="0,4,0,0"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding DataContext.IsTimelineCompact, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="True">
+                                                                        <Setter Property="FontSize" Value="12"/>
+                                                                        <Setter Property="Margin" Value="0"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>
@@ -608,7 +785,7 @@
                                 </ItemsControl>
 
                                 <!-- Detected notes under each chord -->
-                                <ItemsControl Grid.Row="2" ItemsSource="{Binding Chords}" Margin="0,16,0,8">
+                                <ItemsControl Grid.Row="2" ItemsSource="{Binding Chords}" Margin="0,8,0,4">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate><Canvas/></ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
@@ -664,12 +841,12 @@
 
                                 <!-- Playhead: end of the audio analysed so far -->
                                 <Canvas Grid.RowSpan="3" IsHitTestVisible="False">
-                                    <Rectangle Canvas.Left="{Binding PlayheadLeft}" Width="2" Height="436" Fill="{DynamicResource Playhead}"/>
+                                    <Rectangle Canvas.Left="{Binding PlayheadLeft}" Width="2" Height="{Binding ActualHeight, ElementName=TimelineGrid}" Fill="{DynamicResource Playhead}"/>
                                 </Canvas>
 
                                 <!-- Playback position -->
                                 <Canvas Grid.RowSpan="3" IsHitTestVisible="False" Visibility="{Binding HasPlayback, Converter={StaticResource BoolToVisibility}}">
-                                    <Rectangle Canvas.Left="{Binding PlaybackLeft}" Width="3" Height="436" Fill="{DynamicResource TextPrimary}"/>
+                                    <Rectangle Canvas.Left="{Binding PlaybackLeft}" Width="3" Height="{Binding ActualHeight, ElementName=TimelineGrid}" Fill="{DynamicResource TextPrimary}"/>
                                 </Canvas>
 
                                 <!-- Ruler hit area: drag to choose the loop range, drag its ends to change it, click to move the playback there -->
@@ -680,11 +857,273 @@
                                         MouseLeftButtonUp="OnLoopRulerMouseUp" LostMouseCapture="OnLoopRulerLostCapture"/>
                             </Grid>
                         </ScrollViewer>
+                        <!-- Hint in the middle of the empty timeline (outside the ScrollViewer so it stays centred) -->
+                        <TextBlock Text="{Binding PlaceholderText}" FontSize="18" IsHitTestVisible="False" Foreground="{DynamicResource TextMuted}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,30,0,0" TextWrapping="Wrap" TextAlignment="Center"/>
+                        </Grid>
+                    </DockPanel>
+                </Border>
+
+                <!-- Fretboard panel (指板), opened with the button in the timeline header: chord form / scale tabs -->
+                <Border x:Name="FretboardCard" Grid.Row="2" ClipToBounds="True" VerticalAlignment="Bottom" SizeChanged="OnFretboardSpaceChanged"
+                        Visibility="{Binding IsFretboardOpen, Converter={StaticResource BoolToVisibility}}">
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource Card}">
+                            <Setter Property="Margin" Value="0,16,0,0"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsTimelineHidden}" Value="True">
+                                    <Setter Property="Margin" Value="0"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <DockPanel Margin="20,10,20,12">
+                        <!-- Resize grip: drag the top edge up to enlarge the panel; past the largest size the timeline closes (double-click resets) -->
+                        <Thumb DockPanel.Dock="Top" Height="14" Margin="0,-10,0,0" Cursor="SizeNS"
+                               DragStarted="OnFretboardResizeStarted" DragDelta="OnFretboardResizeDrag" MouseDoubleClick="OnFretboardResizeReset"
+                               ToolTip="上へドラッグで指板を大きく（さらに上げるとコード進行を閉じて大きく表示）。ダブルクリックで元に戻す">
+                            <Thumb.Template>
+                                <ControlTemplate TargetType="Thumb">
+                                    <Border x:Name="Bd" Background="Transparent" CornerRadius="4">
+                                        <Rectangle x:Name="Grip" Width="56" Height="4" RadiusX="2" RadiusY="2" Fill="{DynamicResource ControlBorder}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Grip" Property="Fill" Value="{DynamicResource Playhead}"/>
+                                        </Trigger>
+                                        <Trigger Property="IsDragging" Value="True">
+                                            <Setter TargetName="Grip" Property="Fill" Value="{DynamicResource Playhead}"/>
+                                            <Setter TargetName="Grip" Property="Width" Value="80"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Thumb.Template>
+                        </Thumb>
+                        <!-- Header: title, tabs, now playing -->
+                        <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="指板" Style="{StaticResource CardTitle}" VerticalAlignment="Center"/>
+                                <Border Margin="18,0,0,0" Padding="3" CornerRadius="7" Background="{DynamicResource ControlBackground}" BorderBrush="{DynamicResource ControlBorder}" BorderThickness="1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton Style="{StaticResource SegmentTab}" GroupName="FretboardTab" Content="コードフォーム" IsChecked="{Binding IsChordFormTab}"/>
+                                        <RadioButton Style="{StaticResource SegmentTab}" GroupName="FretboardTab" Content="スケール" IsChecked="{Binding IsScaleTab}"/>
+                                    </StackPanel>
+                                </Border>
+                                <!-- Selectors in the header (as in the design): the scale (scale tab only) and the label (both tabs) -->
+                                <StackPanel Orientation="Horizontal">
+                                    <ComboBox Style="{StaticResource ThemedComboBox}" Width="200" Height="36" FontSize="14" Margin="14,0,0,0"
+                                              ItemsSource="{Binding ScaleOptions}" SelectedItem="{Binding SelectedScale}" DisplayMemberPath="Label"
+                                              IsEnabled="{Binding HasFretboard}" Visibility="{Binding IsScaleTab, Converter={StaticResource BoolToVisibility}}">
+                                        <ComboBox.ToolTip>
+                                            <TextBlock>
+                                                <Run Text="{Binding ScaleTitle, Mode=OneWay}" FontWeight="SemiBold"/><LineBreak/>
+                                                <Run Text="どれを選んでも、推定したキーから外れない音だけを表示します（C メジャーでマイナー・ペンタ → A マイナー・ペンタ）"/>
+                                            </TextBlock>
+                                        </ComboBox.ToolTip>
+                                    </ComboBox>
+                                    <ComboBox Style="{StaticResource ThemedComboBox}" Width="180" Height="36" FontSize="14" Margin="10,0,0,0"
+                                              ItemsSource="{Binding FretLabels}" SelectedItem="{Binding SelectedFretLabel}" DisplayMemberPath="Label"
+                                              ToolTip="点の中に書く文字。度数は、スケールではスケールのルート、コードフォームではコードのルートからの音程"/>
+                                </StackPanel>
+                                <Button Style="{StaticResource SmallButton}" Margin="14,0,0,0" Command="{Binding ShowTimelineCommand}"
+                                        Visibility="{Binding IsTimelineHidden, Converter={StaticResource BoolToVisibility}}" ToolTip="コード進行を表示して、指板を元の大きさに戻します">
+                                    <StackPanel Orientation="Horizontal" Margin="12,0">
+                                        <TextBlock Text="&#xE70D;" Style="{StaticResource Icon}" FontSize="11" Margin="0,1,6,0"/>
+                                        <TextBlock Text="コード進行を表示" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                            <Border HorizontalAlignment="Right" VerticalAlignment="Center" Height="40" Padding="14,0" CornerRadius="6"
+                                    Background="{DynamicResource NowPlayingBackground}" BorderBrush="{DynamicResource NowPlayingBorder}" BorderThickness="1"
+                                    Visibility="{Binding HasPlayback, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,1,8,0">
+                                        <Ellipse.Style>
+                                            <Style TargetType="Ellipse">
+                                                <Setter Property="Fill" Value="{DynamicResource TextMuted}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsNowPlaying}" Value="True">
+                                                        <Setter Property="Fill" Value="{DynamicResource NowPlayingDot}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
+                                    <TextBlock Text="{Binding NowPlayingState}" FontSize="12" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,1,10,0"/>
+                                    <TextBlock Text="{Binding NowPlayingChord}" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding NowPlayingDegree}" FontSize="14" Foreground="{DynamicResource KeyBadgeLabel}" VerticalAlignment="Center" Margin="8,3,0,0"/>
+                                    <TextBlock FontSize="12" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="6,2,0,0">
+                                        <Run Text="・"/><Run Text="{Binding NowPlayingTime, Mode=OneWay}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+
+                        <Grid>
+                            <!-- ===== Chord form tab ===== -->
+                            <Grid Visibility="{Binding IsChordFormTab, Converter={StaticResource BoolToVisibility}}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="260"/>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Small chord diagram; as tall as the neck side, so the neck decides the panel height -->
+                                <Border Grid.Column="0" VerticalAlignment="Top" Height="{Binding ActualHeight, ElementName=ChordFormRight}" CornerRadius="8" Padding="12,6" Background="{DynamicResource WindowBackground}" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1">
+                                    <DockPanel>
+                                        <!-- Name and the alternate-form button on one row, so the diagram keeps its height -->
+                                        <DockPanel DockPanel.Dock="Top">
+                                            <Button DockPanel.Dock="Right" Style="{StaticResource SmallButton}" VerticalAlignment="Center" Margin="8,0,0,0"
+                                                    Content="{Binding AlternateFormText}" Command="{Binding NextChordFormCommand}"
+                                                    ToolTip="同じコードの別の押さえ方に切り替えます"/>
+                                            <TextBlock Text="{Binding ChordFormName}" FontSize="20" FontWeight="Bold" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" TextTrimming="CharacterEllipsis"/>
+                                        </DockPanel>
+                                        <!-- TAB text, and with a capo the sounding chord -->
+                                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,1,0,0">
+                                            <TextBlock Text="{Binding ChordFormText}" FontSize="12" FontFamily="Consolas, Segoe UI" VerticalAlignment="Center" Foreground="{DynamicResource TextMuted}"/>
+                                            <TextBlock FontSize="12" VerticalAlignment="Center" Foreground="{DynamicResource KeyBadgeLabel}" TextTrimming="CharacterEllipsis">
+                                                <Run Text=" ・ "/><Run Text="{Binding ChordFormSub, Mode=OneWay}"/>
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ChordFormSub}" Value="">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <!-- Grows with the panel (keeps its proportions) -->
+                                        <Viewbox Stretch="Uniform" Margin="0,2,0,0" HorizontalAlignment="Center">
+                                            <views:ChordDiagramView Width="150" Height="122"
+                                                                    Form="{Binding CurrentChordForm}" Dots="{Binding ChordDiagramDots}"
+                                                                    LineBrush="{DynamicResource FretLine}" LabelBrush="{DynamicResource TextSecondary}"
+                                                                    ToneBrush="{DynamicResource FretScaleNote}" RootBrush="{DynamicResource FretScaleRoot}"/>
+                                        </Viewbox>
+                                    </DockPanel>
+                                </Border>
+
+                                <DockPanel Grid.Column="2" x:Name="ChordFormRight" VerticalAlignment="Top">
+                                    <!-- Detected notes and legend on one row (as tall as the scale tab's legend); wraps when narrow -->
+                                    <WrapPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="34,6,0,0">
+                                        <WrapPanel.Resources>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="FontSize" Value="12"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource TextMuted}"/>
+                                                <Setter Property="VerticalAlignment" Value="Center"/>
+                                                <Setter Property="Margin" Value="5,0,16,0"/>
+                                            </Style>
+                                        </WrapPanel.Resources>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,14,0">
+                                            <TextBlock Text="検出した音" Margin="0,0,8,0"/>
+                                            <ItemsControl ItemsSource="{Binding DetectedNotes}" VerticalAlignment="Center">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate DataType="{x:Type vm:DetectedNoteChip}">
+                                                        <Grid Margin="0,0,6,0" MinWidth="38">
+                                                            <Rectangle RadiusX="8" RadiusY="8" StrokeThickness="1.4">
+                                                                <Rectangle.Style>
+                                                                    <Style TargetType="Rectangle">
+                                                                        <Setter Property="Fill" Value="{DynamicResource FretChip}"/>
+                                                                        <Setter Property="Stroke" Value="{DynamicResource FretScaleNote}"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsChordTone}" Value="False">
+                                                                                <Setter Property="Fill" Value="Transparent"/>
+                                                                                <Setter Property="Stroke" Value="{DynamicResource TextMuted}"/>
+                                                                                <Setter Property="StrokeDashArray" Value="2 2"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Rectangle.Style>
+                                                            </Rectangle>
+                                                            <TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold" Margin="9,0" HorizontalAlignment="Center">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsChordTone}" Value="False">
+                                                                                <Setter Property="Foreground" Value="{DynamicResource TextMuted}"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="22" Height="12" CornerRadius="6" Background="{DynamicResource FretScaleRoot}"/><TextBlock Text="ルート"/>
+                                            <Border Width="22" Height="12" CornerRadius="6" Background="{DynamicResource FretScaleNote}"/><TextBlock Text="押さえる構成音"/>
+                                            <Border Width="22" Height="12" CornerRadius="6" Background="{DynamicResource FretScaleNoteFill}" BorderBrush="{DynamicResource FretScaleNoteRing}" BorderThickness="1"/><TextBlock Text="別の場所"/>
+                                            <Rectangle Width="22" Height="12" RadiusX="6" RadiusY="6" Stroke="{DynamicResource TextMuted}" StrokeThickness="1.4" StrokeDashArray="2 2"/><TextBlock Text="コード外の音"/>
+                                        </StackPanel>
+                                    </WrapPanel>
+                                    <Grid Height="{Binding FretboardHeight}">
+                                        <views:FretboardView Marks="{Binding ChordFormMarks}" MutedStrings="{Binding ChordFormMutedStrings}" Capo="{Binding Capo}" FretCount="{Binding ChordFormFretCount}"
+                                                             BoardBrush="{DynamicResource FretBoard}" LineBrush="{DynamicResource FretLine}" LabelBrush="{DynamicResource TextSecondary}"
+                                                             ScaleNoteBrush="{DynamicResource FretScaleNote}" ScaleRootBrush="{DynamicResource FretScaleRoot}"
+                                                             ScaleNoteFillBrush="{DynamicResource FretScaleNoteFill}" ScaleNoteRingBrush="{DynamicResource FretScaleNoteRing}"
+                                                             OutsideToneBrush="{DynamicResource FretOutsideTone}"/>
+                                    </Grid>
+                                </DockPanel>
+
+                                <!-- No chord under the playback position -->
+                                <Border Grid.ColumnSpan="3" Background="{DynamicResource CardBackground}" Opacity="0.9" Visibility="{Binding HasChordForm, Converter={StaticResource InvertedBoolToVisibility}}">
+                                    <TextBlock Text="{Binding ChordFormHint}" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource TextMuted}"/>
+                                </Border>
+                            </Grid>
+
+                            <!-- ===== Scale tab ===== -->
+                            <DockPanel Visibility="{Binding IsScaleTab, Converter={StaticResource BoolToVisibility}}">
+                                <!-- Legend -->
+                                <!-- Hidden (not collapsed) before analysis, so the panel is as tall as the chord-form tab -->
+                                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="34,6,0,0">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasFretboard}" Value="False">
+                                                    <Setter Property="Visibility" Value="Hidden"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <StackPanel.Resources>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="FontSize" Value="12"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource TextMuted}"/>
+                                            <Setter Property="VerticalAlignment" Value="Center"/>
+                                            <Setter Property="Margin" Value="5,0,16,0"/>
+                                        </Style>
+                                    </StackPanel.Resources>
+                                    <Border Width="22" Height="12" CornerRadius="6" Background="{DynamicResource FretScaleRoot}"
+                                            ToolTip="再生中のコードのルート（コードがないときはスケールのルート）"/><TextBlock Text="ルート"/>
+                                    <Border Width="22" Height="12" CornerRadius="6" Background="{DynamicResource FretScaleNote}"/><TextBlock Text="コード構成音"/>
+                                    <Border Width="22" Height="12" CornerRadius="6" Background="{DynamicResource FretScaleNoteFill}" BorderBrush="{DynamicResource FretScaleNoteRing}" BorderThickness="1"/><TextBlock Text="スケール音"/>
+                                    <Rectangle Width="22" Height="12" RadiusX="6" RadiusY="6" Stroke="{DynamicResource FretOutsideTone}" StrokeThickness="1.5" StrokeDashArray="2 1"/><TextBlock Text="スケール外の構成音"/>
+                                </StackPanel>
+                                <Grid Height="{Binding FretboardHeight}">
+                                    <views:FretboardView Marks="{Binding FretboardMarks}" Capo="{Binding Capo}" FretCount="{x:Static vm:ChordDetectionViewModel.ScaleFretCount}"
+                                                         BoardBrush="{DynamicResource FretBoard}" LineBrush="{DynamicResource FretLine}" LabelBrush="{DynamicResource TextSecondary}"
+                                                         ScaleNoteBrush="{DynamicResource FretScaleNote}" ScaleRootBrush="{DynamicResource FretScaleRoot}"
+                                                         ScaleNoteFillBrush="{DynamicResource FretScaleNoteFill}" ScaleNoteRingBrush="{DynamicResource FretScaleNoteRing}"
+                                                         OutsideToneBrush="{DynamicResource FretOutsideTone}"/>
+                                    <Border Background="{DynamicResource CardBackground}" Opacity="0.85" Visibility="{Binding HasFretboard, Converter={StaticResource InvertedBoolToVisibility}}">
+                                        <TextBlock Text="{Binding FretboardHint}" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource TextMuted}"/>
+                                    </Border>
+                                </Grid>
+                            </DockPanel>
+                        </Grid>
                     </DockPanel>
                 </Border>
 
                 <!-- Chord sheet: one cell per bar (shown for takes recorded with 小節に合わせる) -->
-                <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,16,0,0" ClipToBounds="True" Visibility="{Binding HasBars, Converter={StaticResource BoolToVisibility}}">
+                <Border x:Name="BarSheetCard" Grid.Row="1" Style="{StaticResource Card}" Margin="0,16,0,0" ClipToBounds="True" Visibility="{Binding HasBars, Converter={StaticResource BoolToVisibility}}">
                     <DockPanel>
                         <Grid DockPanel.Dock="Top" Height="40" Margin="20,10,20,4">
                             <TextBlock Text="コード譜（小節ごと）" Style="{StaticResource CardTitle}" VerticalAlignment="Center"/>
@@ -727,8 +1166,6 @@
                 </Border>
                 </Grid>
 
-                <!-- Hint in the middle of the empty timeline (outside the ScrollViewer so it stays centred). -->
-                <TextBlock Grid.Column="2" Text="{Binding PlaceholderText}" FontSize="18" IsHitTestVisible="False" Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,346,0,0"/>
             </Grid>
         </DockPanel>
 </UserControl>

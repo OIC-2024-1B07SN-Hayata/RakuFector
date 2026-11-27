@@ -46,6 +46,24 @@ public sealed record MinorDegreeBaseOption(MinorDegreeBase Base, string Label);
 /// <param name="IsCurrent">True when this capo is the one selected now.</param>
 public sealed record CapoSuggestionRow(int Capo, string Title, string Shapes, string ScoreText, bool IsCurrent);
 
+/// <summary>One choice of the scale shown on the fretboard.</summary>
+public sealed record ScaleOption(ScaleType Type, string Label);
+
+/// <summary>What is written in the fretboard dots.</summary>
+public enum FretLabelMode { NoteName, Interval }
+
+/// <summary>One choice of the fretboard label selector.</summary>
+public sealed record FretLabelOption(FretLabelMode Mode, string Label);
+
+/// <summary>One dot on the fretboard. <paramref name="StringIndex"/> 0 is the 1st (highest) string.</summary>
+public sealed record FretMarkViewModel(int StringIndex, int Fret, string Label, FretMarkKind Kind);
+
+/// <summary>Tab of the fretboard panel (指板).</summary>
+public enum FretboardTab { ChordForm, Scale }
+
+/// <summary>A detected note under the current chord; <paramref name="IsChordTone"/> false is drawn dashed.</summary>
+public sealed record DetectedNoteChip(string Name, bool IsChordTone);
+
 /// <summary>A second mark on the timeline ruler.</summary>
 public sealed record TimelineTick(double Left, string Label);
 
@@ -133,6 +151,8 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         _selectedLineDivision = LineDivisions[^1];
         _selectedMinorDegreeBase = MinorDegreeBases[0];
         _selectedTimelineZoom = TimelineZooms[2]; // about 30 s
+        _selectedScale = ScaleOptions[0];
+        _selectedFretLabel = FretLabels[0];
         if (_tempo is not null) _tempo.TempoChanged += OnTempoChanged;
 
         _recorder.LevelChanged += OnRecorderLevel;
@@ -183,6 +203,7 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
     private static readonly IReadOnlySet<string> SavedSettings = new HashSet<string>(StringComparer.Ordinal)
     {
         nameof(SelectedTimelineZoom), nameof(ShowDegrees), nameof(SelectedMinorDegreeBase), nameof(SelectedLineDivision),
+        nameof(SelectedFretLabel), nameof(IsFretboardOpen), nameof(SelectedFretboardTab), nameof(FretboardHeight),
     };
 
     /// <summary>Restores saved settings; values that are no longer offered are left at their defaults.</summary>
@@ -193,6 +214,11 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         ShowDegrees = saved.WantsDegrees;
         SelectedMinorDegreeBase = MinorDegreeBases.FirstOrDefault(b => b.Base == saved.MinorBase) ?? SelectedMinorDegreeBase;
         SelectedLineDivision = LineDivisions.FirstOrDefault(d => d.Division == saved.LineDivision) ?? SelectedLineDivision;
+        if (Enum.TryParse<FretLabelMode>(saved.FretLabelMode, out var fretLabel))
+            SelectedFretLabel = FretLabels.FirstOrDefault(l => l.Mode == fretLabel) ?? SelectedFretLabel;
+        IsFretboardOpen = saved.FretboardOpen;
+        if (saved.FretboardHeight > 0) FretboardHeight = saved.FretboardHeight;
+        if (Enum.TryParse<FretboardTab>(saved.FretboardTab, out var tab)) SelectedFretboardTab = tab;
     }
 
     private ChordPageSettings CurrentSettings() => new()
@@ -201,6 +227,10 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         ShowDegrees = ShowDegrees,
         MinorDegreeBase = (SelectedMinorDegreeBase?.Base ?? MinorDegreeBase.RelativeMajor).ToString(),
         LineDivision = SelectedLineDivision?.Division ?? 32,
+        FretLabelMode = (SelectedFretLabel?.Mode ?? FretLabelMode.NoteName).ToString(),
+        FretboardOpen = IsFretboardOpen,
+        FretboardTab = SelectedFretboardTab.ToString(),
+        FretboardHeight = FretboardHeight,
     };
 
     // ---------- bindable state ----------
@@ -353,8 +383,11 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
 
     public string MetronomeVolumeText => $"{MetronomeVolumePercent:0}%";
 
-    /// <summary>Height of the timeline; bar and beat lines run through the ruler down to its bottom.</summary>
-    public const double TimelineHeight = 436;
+    /// <summary>
+    /// Length of the bar and beat lines. The timeline's height follows the window, so they are drawn longer than it
+    /// can be and cut at its bottom by the view.
+    /// </summary>
+    public const double TimelineHeight = 2000;
 
     /// <summary>Top of the thin lines between the beats: they start as ticks at the bottom of the ruler.</summary>
     public const double SubdivisionTop = 40;
@@ -1105,6 +1138,8 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         double position = _player.PositionSeconds;
         PlaybackLeft = position * PixelsPerSecond;
         PlaybackTimeText = HasPlayback ? $"{FormatTime(position)} / {FormatTime(_player.DurationSeconds)}" : "";
+        UpdateCurrentChord();
+        UpdateNowPlaying(position);
     }
 
     private static string FormatTime(double seconds) =>
@@ -1133,6 +1168,12 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         {
             _key = null;
             _keyDecided = false;
+            _soundingChords = [];
+            _currentShown = null;
+            _currentChord = null;
+            _scaleChosenByUser = false; // a new song: the scale follows its key again
+            UpdateFretboard();
+            UpdateChordForm();
             UpdateKeyBadge();
             UpdateCapoSuggestions();
             RefreshBars([], null);
@@ -1155,6 +1196,11 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
         UpdateKeyBadge();
         UpdateCapoSuggestions();
         RefreshBars(soundingChords, key);
+        _soundingChords = soundingChords;
+        _currentShown = ShownAtPlayback(); // the transposition may have changed it
+        _currentChord = _currentShown?.Chord;
+        UpdateFretboard();
+        UpdateChordForm();
 
         UpdatePlaceholder();
         SummaryText = $"{_analysis.DurationSeconds:0.0} 秒 / 検出した音 {_analysis.Notes.Count} 個 / コード {Chords.Count} 個";
@@ -1326,14 +1372,360 @@ public sealed partial class ChordDetectionViewModel : ObservableObject, IDisposa
             s.Capo == Capo))];
     }
 
+    // ---------- scale on the fretboard ----------
+
+    /// <summary>Shown chords after transposition (N.C. left out), for the chord under the playback position.</summary>
+    private IReadOnlyList<DisplayedChord> _soundingChords = [];
+
+    /// <summary>The shown chord (time range + sounding chord) at the playback position; null when none.</summary>
+    private DisplayedChord? _currentShown;
+
+    /// <summary>The sounding chord at the playback position; null when none (or nothing is loaded).</summary>
+    private ChordResult? _currentChord;
+
+    /// <summary>True once the scale was picked by hand for this song; until then it follows the key.</summary>
+    private bool _scaleChosenByUser;
+
+    private bool _choosingScaleAutomatically;
+
+    /// <summary>Frets shown in the scale view (0–12: one octave, wide enough for the note names).</summary>
+    public const int ScaleFretCount = 12;
+
+    public IReadOnlyList<ScaleOption> ScaleOptions { get; } =
+        [.. Enum.GetValues<ScaleType>().Select(t => new ScaleOption(t, Scale.JapaneseName(t)))];
+
+    [ObservableProperty] private ScaleOption? _selectedScale;
+
+    partial void OnSelectedScaleChanged(ScaleOption? value)
+    {
+        if (!_choosingScaleAutomatically) _scaleChosenByUser = true;
+        UpdateFretboard();
+    }
+
+    public IReadOnlyList<FretLabelOption> FretLabels { get; } =
+    [
+        new(FretLabelMode.NoteName, "音名（C, D, E …）"),
+        new(FretLabelMode.Interval, "度数（R, ♭3, 5 …）"),
+    ];
+
+    [ObservableProperty] private FretLabelOption? _selectedFretLabel;
+
+    partial void OnSelectedFretLabelChanged(FretLabelOption? value)
+    {
+        UpdateFretboard();
+        UpdateChordForm();
+    }
+
+    /// <summary>Dots on the fretboard: notes of the scale and of the chord at the playback position.</summary>
+    [ObservableProperty] private IReadOnlyList<FretMarkViewModel> _fretboardMarks = [];
+
+    /// <summary>True when a key is known and the fretboard shows its scale.</summary>
+    [ObservableProperty] private bool _hasFretboard;
+
+    /// <summary>Scale and key, e.g. "A マイナー・ペンタトニック（KEY Am）".</summary>
+    [ObservableProperty] private string _scaleTitle = "";
+
+    /// <summary>Shown instead of the fretboard while no key is known.</summary>
+    [ObservableProperty] private string _fretboardHint = "";
+
+    /// <summary>Finds the chord at the playback position and redraws the fretboard only when it changed.</summary>
+    private void UpdateCurrentChord()
+    {
+        var shown = ShownAtPlayback();
+        if (shown == _currentShown) return;
+        _currentShown = shown;
+        _currentChord = shown?.Chord;
+        UpdateFretboard();
+        UpdateChordForm();
+    }
+
+    private DisplayedChord? ShownAtPlayback()
+    {
+        if (!HasPlayback) return null;
+        double position = _player.PositionSeconds;
+        return _soundingChords.FirstOrDefault(c => c.StartSeconds <= position && position < c.EndSeconds);
+    }
+
+    private void UpdateFretboard()
+    {
+        if (DisplayKey is not { } key)
+        {
+            HasFretboard = false;
+            FretboardMarks = [];
+            ScaleTitle = "";
+            FretboardHint = _keyDecided
+                ? "キーを判定できなかったため、スケールを表示できません"
+                : "解析が終わる（キーが決まる）と、キーで使える音を指板に表示します";
+            return;
+        }
+
+        if (!_scaleChosenByUser)
+        {
+            var wanted = Scale.DefaultFor(key);
+            if (SelectedScale?.Type != wanted)
+            {
+                _choosingScaleAutomatically = true;
+                try { SelectedScale = ScaleOptions.First(o => o.Type == wanted); } // calls back into UpdateFretboard
+                finally { _choosingScaleAutomatically = false; }
+                return;
+            }
+        }
+
+        var type = SelectedScale?.Type ?? Scale.DefaultFor(key);
+        int root = Scale.RootFor(key, type);
+        bool intervals = SelectedFretLabel?.Mode == FretLabelMode.Interval;
+        var chord = _currentChord is { IsNoChord: false } c ? c : null;
+        FretboardMarks = [.. Fretboard.Marks(Scale.PitchClassesOf(key, type), root, chord, Capo, ScaleFretCount)
+            .Select(m => new FretMarkViewModel(m.StringIndex, m.Fret,
+                intervals ? Scale.IntervalName(m.PitchClass - root) : NoteSpeller.Name(m.PitchClass, key), m.Kind))];
+        ScaleTitle = $"{NoteSpeller.Name(root, key)} {Scale.JapaneseName(type)}（KEY {key.Name}{(_key?.ModeFromProfile == true ? " 推定" : "")}）";
+        FretboardHint = "";
+        HasFretboard = true;
+    }
+
     /// <summary>Notes under a chord, moved by the transposition and spelled for the key.</summary>
     private string NotesIn(DisplayedChord shown, MusicKey? key) =>
-        string.Join(" ", _analysis!.Notes
+        string.Join(" ", PitchesIn(shown).Select(p => NoteSpeller.MidiName(p, key)));
+
+    /// <summary>MIDI pitches heard during a chord, moved by the transposition, low to high, each once.</summary>
+    private IEnumerable<int> PitchesIn(DisplayedChord shown) =>
+        (_analysis?.Notes ?? [])
             .Where(n => n.StartSeconds < shown.EndSeconds && n.EndSeconds > shown.StartSeconds)
             .Select(n => n.Pitch + Transpose)
             .Distinct()
-            .Order()
-            .Select(p => NoteSpeller.MidiName(p, key)));
+            .Order();
+
+    // ---------- fretboard panel (指板): open / tabs / chord forms ----------
+
+    /// <summary>True while the fretboard panel is open (fixed at the bottom; the timeline gives way as it grows).</summary>
+    [ObservableProperty] private bool _isFretboardOpen;
+
+    /// <summary>
+    /// True while the timeline is low (set by the view from its height): the detected-notes row and the start times
+    /// are hidden and the chord text is smaller.
+    /// </summary>
+    [ObservableProperty] private bool _isTimelineCompact;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsChordFormTab), nameof(IsScaleTab))]
+    private FretboardTab _selectedFretboardTab;
+
+    public const double DefaultFretboardHeight = 218;
+    public const double MinFretboardHeight = 200;
+    /// <summary>Absolute upper bound; the real limit comes from the space on screen (see <see cref="ResizeFretboard"/>).</summary>
+    private const double AbsoluteMaxFretboardHeight = 1200;
+    /// <summary>How far the top edge must be pulled past the timeline before the timeline closes.</summary>
+    private const double HideTimelineOvershoot = 40;
+
+    /// <summary>Height of the neck in the fretboard panel; changed by dragging the panel's top edge.</summary>
+    [ObservableProperty] private double _fretboardHeight = DefaultFretboardHeight;
+
+    partial void OnFretboardHeightChanged(double value)
+    {
+        double clamped = double.IsFinite(value) ? Math.Clamp(value, MinFretboardHeight, AbsoluteMaxFretboardHeight) : DefaultFretboardHeight;
+        if (clamped != value) FretboardHeight = clamped;
+    }
+
+    /// <summary>True when the panel was enlarged over the timeline (コード進行 is closed and the panel shown large).</summary>
+    [ObservableProperty] private bool _isTimelineHidden;
+
+    partial void OnIsFretboardOpenChanged(bool value)
+    {
+        if (!value) IsTimelineHidden = false;
+    }
+
+    /// <summary>
+    /// Height asked for by dragging the panel's top edge (the panel sits at the bottom, so it grows upwards).
+    /// <paramref name="maxWithTimeline"/> is the largest neck that fits below the timeline, <paramref name="maxLarge"/>
+    /// the largest once the timeline is closed. Pulling past the first by <see cref="HideTimelineOvershoot"/> closes
+    /// the timeline; pulling back below it opens the timeline again.
+    /// </summary>
+    public void ResizeFretboard(double requested, double maxWithTimeline, double maxLarge)
+    {
+        if (!double.IsFinite(requested)) return;
+        if (!IsTimelineHidden && requested >= maxWithTimeline + HideTimelineOvershoot) IsTimelineHidden = true;
+        else if (IsTimelineHidden && requested < maxWithTimeline) IsTimelineHidden = false;
+        FretboardHeight = Math.Min(requested, LimitFor(maxWithTimeline, maxLarge));
+    }
+
+    /// <summary>Shrinks the neck when it no longer fits (smaller window, saved height); never opens or closes the timeline.</summary>
+    public void ClampFretboard(double maxWithTimeline, double maxLarge)
+    {
+        double limit = LimitFor(maxWithTimeline, maxLarge);
+        if (FretboardHeight > limit) FretboardHeight = limit;
+    }
+
+    private double LimitFor(double maxWithTimeline, double maxLarge) =>
+        Math.Max(MinFretboardHeight, IsTimelineHidden ? maxLarge : maxWithTimeline);
+
+    /// <summary>Opens the timeline again and gives the panel its default size.</summary>
+    [RelayCommand]
+    private void ShowTimeline()
+    {
+        IsTimelineHidden = false;
+        FretboardHeight = DefaultFretboardHeight;
+    }
+
+    public bool IsChordFormTab
+    {
+        get => SelectedFretboardTab == FretboardTab.ChordForm;
+        set { if (value) SelectedFretboardTab = FretboardTab.ChordForm; }
+    }
+
+    public bool IsScaleTab
+    {
+        get => SelectedFretboardTab == FretboardTab.Scale;
+        set { if (value) SelectedFretboardTab = FretboardTab.Scale; }
+    }
+
+    /// <summary>Forms of the shape at the playback position, easiest first, and the one shown.</summary>
+    private IReadOnlyList<ChordForm> _forms = [];
+    private int _formIndex;
+    private ChordResult? _formsFor;
+
+    /// <summary>True when a chord is under the playback position and a form is shown.</summary>
+    [ObservableProperty] private bool _hasChordForm;
+
+    /// <summary>Shown instead of the chord form when there is none.</summary>
+    [ObservableProperty] private string _chordFormHint = "";
+
+    /// <summary>Name of the shape to fret, e.g. "Asus4".</summary>
+    [ObservableProperty] private string _chordFormName = "";
+
+    /// <summary>With a capo: "カポ2・実音 Bsus4"; otherwise empty.</summary>
+    [ObservableProperty] private string _chordFormSub = "";
+
+    /// <summary>The form as TAB text, e.g. "x02230".</summary>
+    [ObservableProperty] private string _chordFormText = "";
+
+    [ObservableProperty] private ChordForm? _currentChordForm;
+
+    /// <summary>Fretted notes of the form for the small diagram (frets without the capo).</summary>
+    [ObservableProperty] private IReadOnlyList<FretMarkViewModel> _chordDiagramDots = [];
+
+    /// <summary>Dots on the neck: the form and the chord's notes elsewhere.</summary>
+    [ObservableProperty] private IReadOnlyList<FretMarkViewModel> _chordFormMarks = [];
+
+    [ObservableProperty] private IReadOnlyList<int> _chordFormMutedStrings = [];
+
+    /// <summary>Frets shown for the chord form: 0–12 as in the scale view, more when the form goes higher.</summary>
+    [ObservableProperty] private int _chordFormFretCount = ScaleFretCount;
+
+    /// <summary>"別のフォーム（2/3）".</summary>
+    [ObservableProperty] private string _alternateFormText = "別のフォーム";
+
+    /// <summary>Notes detected during the current chord; notes outside the chord are drawn dashed.</summary>
+    [ObservableProperty] private IReadOnlyList<DetectedNoteChip> _detectedNotes = [];
+
+    [ObservableProperty] private bool _isNowPlaying;
+    [ObservableProperty] private string _nowPlayingState = "";
+    [ObservableProperty] private string _nowPlayingChord = "";
+    [ObservableProperty] private string _nowPlayingDegree = "";
+    [ObservableProperty] private string _nowPlayingTime = "";
+
+    [RelayCommand(CanExecute = nameof(HasAlternateForms))]
+    private void NextChordForm()
+    {
+        if (_forms.Count == 0) return;
+        _formIndex = (_formIndex + 1) % _forms.Count;
+        UpdateChordForm();
+    }
+
+    private bool HasAlternateForms() => _forms.Count > 1;
+
+    /// <summary>Rebuilds the chord-form tab for the chord at the playback position (called when it, the capo or the transposition changes).</summary>
+    private void UpdateChordForm()
+    {
+        UpdateNowPlaying(_player.PositionSeconds);
+        var chord = _currentChord is { IsNoChord: false } c ? c with { Bass = null } : null;
+        if (chord is null)
+        {
+            _forms = [];
+            _formsFor = null;
+            HasChordForm = false;
+            ChordFormHint = HasPlayback
+                ? "再生位置にコードがありません（タイムラインのコードをクリックすると、そのフォームを表示します）"
+                : "音声を開くか録音して解析すると、再生位置のコードの押さえ方を表示します";
+            ChordFormName = ChordFormSub = ChordFormText = "";
+            CurrentChordForm = null;
+            ChordDiagramDots = ChordFormMarks = [];
+            ChordFormMutedStrings = [];
+            DetectedNotes = [];
+            NextChordFormCommand.NotifyCanExecuteChanged();
+            return;
+        }
+
+        var key = DisplayKey;
+        var shape = Transposer.Shape(chord, Capo); // with a capo the form is the shape to fret
+        if (shape != _formsFor)
+        {
+            _forms = ChordForms.For(shape);
+            _formIndex = 0;
+            _formsFor = shape;
+        }
+        NextChordFormCommand.NotifyCanExecuteChanged();
+
+        ChordFormName = Capo > 0 ? NoteSpeller.SharpChordName(shape) : NoteSpeller.ChordName(chord, key);
+        ChordFormSub = Capo > 0 ? $"カポ{Capo}・実音 {NoteSpeller.ChordName(chord, key)}" : "";
+        var tones = Fretboard.ChordTones(chord);
+        DetectedNotes = _currentShown is { } shown
+            ? [.. PitchesIn(shown).Select(p => new DetectedNoteChip(NoteSpeller.MidiName(p, key), tones.Contains(PitchClasses.Of(p))))]
+            : [];
+
+        if (_forms.Count == 0)
+        {
+            HasChordForm = false;
+            ChordFormHint = $"{ChordFormName} のフォームはまだ用意していません";
+            ChordFormText = "";
+            CurrentChordForm = null;
+            ChordDiagramDots = ChordFormMarks = [];
+            ChordFormMutedStrings = [];
+            return;
+        }
+
+        var form = _forms[_formIndex];
+        // 0–12 as in the scale view; more only when the form goes higher.
+        int fretCount = Math.Min(Fretboard.DefaultFretCount, Math.Max(ScaleFretCount, Capo + form.MaxFret + 1));
+        string Interval(int pc) => ChordToneName(PitchClasses.Of(pc - chord.Root), chord.Type!);
+        bool noteNames = SelectedFretLabel?.Mode != FretLabelMode.Interval;
+        string Label(int pc) => noteNames ? NoteSpeller.Name(pc, key) : Interval(pc);
+        var marks = Fretboard.ChordFormMarks(form, chord, Capo, fretCount);
+        ChordFormMarks = [.. marks.Select(m => new FretMarkViewModel(m.StringIndex, m.Fret, Label(m.PitchClass), m.Kind))];
+        // The small diagram keeps the intervals (R, 3, 5 …), as on chord charts.
+        ChordDiagramDots = [.. marks.Where(m => m.Kind is FretMarkKind.FormRoot or FretMarkKind.FormTone)
+            .Select(m => new FretMarkViewModel(m.StringIndex, m.Fret - Capo, Interval(m.PitchClass), m.Kind))];
+        ChordFormMutedStrings = [.. Enumerable.Range(0, 6).Where(s => form.FretOn(s) is null)];
+        ChordFormFretCount = fretCount;
+        CurrentChordForm = form;
+        ChordFormText = form.Text;
+        AlternateFormText = $"別のフォーム（{_formIndex + 1}/{_forms.Count}）";
+        ChordFormHint = "";
+        HasChordForm = true;
+    }
+
+    /// <summary>Interval label of a chord tone: as <see cref="Scale.IntervalName"/>, but ♯5 for aug and 9 for add9.</summary>
+    private static string ChordToneName(int interval, ChordType type) => interval switch
+    {
+        8 when !type.Intervals.Contains(7) => "♯5",
+        2 when type.Intervals.Contains(4) => "9",
+        _ => Scale.IntervalName(interval),
+    };
+
+    /// <summary>"● 再生中 Asus4 Ⅴsus4 ・ 0:05.74" in the panel header.</summary>
+    private void UpdateNowPlaying(double position)
+    {
+        IsNowPlaying = IsPlaying;
+        NowPlayingState = !HasPlayback ? "" : IsPlaying ? "再生中" : "停止中";
+        NowPlayingTime = HasPlayback
+            ? TimeSpan.FromSeconds(Math.Max(0, position)).ToString(@"m\:ss\.ff", CultureInfo.InvariantCulture)
+            : "";
+        var key = DisplayKey;
+        var chord = _currentChord is { IsNoChord: false } c ? c : null;
+        NowPlayingChord = chord is null ? (HasPlayback ? ChordResult.NoChordName : "") : NoteSpeller.ChordName(chord, key);
+        NowPlayingDegree = chord is not null && key is { } k
+            ? DegreeNamer.Degree(chord, k, SelectedMinorDegreeBase?.Base ?? MinorDegreeBase.RelativeMajor)
+            : "";
+    }
 
     // ---------- export ----------
 
