@@ -12,8 +12,7 @@ public partial class MainWindow
 {
     private readonly RakufekutaDatabase _presetDatabase = new();
 
-    // プルダウンの選択表示とは別に、
-    // 読込・保存に成功したプリセットを更新対象として保持する。
+    // 読込・保存に成功したプリセットだけを更新対象にする。
     private PresetListItem? _loadedPreset;
 
     private bool _presetBusy;
@@ -27,7 +26,9 @@ public partial class MainWindow
         RoutedEventArgs e)
     {
         if (_presetEventsAttached)
+        {
             return;
+        }
 
         _presetEventsAttached = true;
 
@@ -36,8 +37,6 @@ public partial class MainWindow
             _presetWindowClosed = true;
         };
 
-        // レイアウトを変更せず、保存ボタンの右クリックに
-        // 別名で新規保存する操作を追加する。
         var menu = new ContextMenu();
 
         var saveAs = new MenuItem
@@ -51,6 +50,7 @@ public partial class MainWindow
         };
 
         menu.Items.Add(saveAs);
+
         SavePresetButton.ContextMenu = menu;
 
         SetPresetBusy(false);
@@ -106,41 +106,128 @@ public partial class MainWindow
             PresetListItem? target =
                 forceNew ? null : _loadedPreset;
 
-            string? name = target?.Name;
-
-            if (target is null)
-            {
-                name = AskPresetName();
-
-                if (name is null)
-                    return;
-            }
-
-            var snapshot = _tone.CapturePreset();
-
             bool updating = target is not null;
 
+            string name;
+
             if (target is null)
             {
-                long id = await _presetDatabase.SaveNewAsync(
-                    name!,
-                    snapshot);
+                string previousName = "";
 
-                target = new PresetListItem(id, name!);
+                while (true)
+                {
+                    string? enteredName =
+                        AskPresetName(previousName);
+
+                    if (enteredName is null)
+                    {
+                        return;
+                    }
+
+                    previousName = enteredName;
+
+                    // 通常の同名操作は例外にせず、
+                    // 保存する前に一覧で確認する。
+                    var items =
+                        await _presetDatabase.ListAsync();
+
+                    if (_presetWindowClosed || _checkingClose)
+                    {
+                        return;
+                    }
+
+                    bool duplicate = items.Any(
+                        item => string.Equals(
+                            item.Name,
+                            enteredName,
+                            StringComparison.Ordinal));
+
+                    if (duplicate)
+                    {
+                        MessageBox.Show(
+                            this,
+                            $"「{enteredName}」は既に登録されています。\n\n" +
+                            "別の名前を入力してください。\n" +
+                            "既存のプリセットを更新する場合は、" +
+                            "一覧から選択してから「保存」を押してください。",
+                            "同じ名前では新規保存できません",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+
+                        // 名前を残した状態で入力画面を開き直す。
+                        continue;
+                    }
+
+                    name = enteredName;
+                    break;
+                }
             }
             else
             {
-                // 選択済みプリセットは同じIDの設定を更新。
+                name = target.Name;
+
+                // 別の操作や別プロセスで削除されていた場合も、
+                // 通常の確認メッセージとして扱う。
+                var items =
+                    await _presetDatabase.ListAsync();
+
+                if (_presetWindowClosed || _checkingClose)
+                {
+                    return;
+                }
+
+                bool exists = items.Any(
+                    item => item.Id == target.Id);
+
+                if (!exists)
+                {
+                    MessageBox.Show(
+                        this,
+                        "更新対象のプリセットが見つかりません。\n\n" +
+                        "プリセット一覧を開いて選び直してください。\n" +
+                        "現在の音作りを新規保存する場合は、" +
+                        "保存ボタンを右クリックして" +
+                        "「別名で新規保存…」を選択してください。",
+                        "更新できません",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+
+                    return;
+                }
+            }
+
+            if (_presetWindowClosed || _checkingClose)
+            {
+                return;
+            }
+
+            // UIスレッドで現在の音作り設定を取得する。
+            var snapshot = _tone.CapturePreset();
+
+            if (target is null)
+            {
+                long id =
+                    await _presetDatabase.SaveNewAsync(
+                        name,
+                        snapshot);
+
+                target = new PresetListItem(id, name);
+            }
+            else
+            {
                 await _presetDatabase.UpdateAsync(
                     target.Id,
                     snapshot);
             }
 
             if (_presetWindowClosed)
+            {
                 return;
+            }
 
-            // DB保存に成功してから更新対象を変更する。
+            // 保存成功後にだけ更新対象を切り替える。
             _loadedPreset = target;
+
             UpdatePresetHints();
 
             try
@@ -153,10 +240,13 @@ public partial class MainWindow
                 {
                     MessageBox.Show(
                         this,
-                        "保存は完了しましたが、一覧の更新に失敗しました。\n" +
+                        "保存は完了しましたが、" +
+                        "一覧の更新に失敗しました。\n" +
                         "プルダウンを開いて再取得してください。\n\n" +
                         ex.Message,
-                        "保存完了・一覧更新エラー");
+                        "保存完了・一覧更新エラー",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
                 }
 
                 return;
@@ -168,23 +258,32 @@ public partial class MainWindow
                     this,
                     $"「{target.Name}」を" +
                     $"{(updating ? "更新" : "新規保存")}しました。",
-                    "プリセット保存");
+                    "プリセット保存",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
             }
         }
         catch (Exception ex)
         {
+            // DB接続失敗、書込失敗、不正な保存データなど。
+            // 保存失敗時は_loadedPresetを変更しない。
             if (!_presetWindowClosed)
             {
                 MessageBox.Show(
                     this,
+                    "プリセットを保存できませんでした。\n\n" +
                     ex.Message,
-                    "保存できません");
+                    "保存エラー",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
             }
         }
         finally
         {
             if (!_presetWindowClosed)
+            {
                 SetPresetBusy(false);
+            }
         }
     }
 
@@ -201,28 +300,35 @@ public partial class MainWindow
         }
 
         PresetComboBox.IsDropDownOpen = false;
+
         SetPresetBusy(true);
 
         try
         {
-            // 表示上の選択だけ解除する。
-            // 更新対象の_loadedPresetは解除しない。
-            await RefreshPresetListAsync(clearSelection: true);
+            // 表示上の選択だけを解除する。
+            // 成功済みの更新対象は維持する。
+            await RefreshPresetListAsync(
+                clearSelection: true);
 
             if (_presetWindowClosed || _checkingClose)
+            {
                 return;
+            }
 
             if (PresetComboBox.Items.Count == 0)
             {
                 MessageBox.Show(
                     this,
                     "保存済みのプリセットはありません。",
-                    "プリセット一覧");
+                    "プリセット一覧",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
 
                 return;
             }
 
             SetPresetBusy(false);
+
             _reopeningPresetList = true;
 
             try
@@ -240,24 +346,32 @@ public partial class MainWindow
             {
                 MessageBox.Show(
                     this,
+                    "プリセット一覧を取得できませんでした。\n\n" +
                     ex.Message,
-                    "一覧を取得できません");
+                    "一覧取得エラー",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
             }
         }
         finally
         {
             if (!_presetWindowClosed)
+            {
                 SetPresetBusy(false);
+            }
         }
     }
 
     private async Task RefreshPresetListAsync(
         bool clearSelection = false)
     {
-        var items = await _presetDatabase.ListAsync();
+        var items =
+            await _presetDatabase.ListAsync();
 
         if (_presetWindowClosed)
+        {
             return;
+        }
 
         _updatingPresetList = true;
 
@@ -290,21 +404,24 @@ public partial class MainWindow
         }
 
         PresetComboBox.IsDropDownOpen = false;
+
         SetPresetBusy(true);
 
         bool applied = false;
 
         try
         {
-            var preset = await _presetDatabase.LoadAsync(item.Id);
+            var preset =
+                await _presetDatabase.LoadAsync(item.Id);
 
             if (_presetWindowClosed || _checkingClose)
+            {
                 return;
+            }
 
             _tone.ApplySavedPreset(preset);
 
-            // 読込と画面反映の両方が成功してから
-            // 保存ボタンの更新対象を切り替える。
+            // DB読込と画面反映の両方が成功した後に更新する。
             _loadedPreset = item;
             applied = true;
 
@@ -316,8 +433,11 @@ public partial class MainWindow
             {
                 MessageBox.Show(
                     this,
+                    "プリセットを読み込めませんでした。\n\n" +
                     ex.Message,
-                    "読み込めません");
+                    "読込エラー",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
             }
         }
         finally
@@ -330,12 +450,14 @@ public partial class MainWindow
 
                     try
                     {
-                        // 失敗した選択を更新対象として扱わない。
+                        // 読込に失敗したプリセットを
+                        // 更新対象として扱わない。
                         PresetComboBox.SelectedItem =
                             PresetComboBox.Items
                                 .OfType<PresetListItem>()
                                 .FirstOrDefault(
-                                    value => value.Id == _loadedPreset?.Id);
+                                    value =>
+                                        value.Id == _loadedPreset?.Id);
                     }
                     finally
                     {
@@ -348,7 +470,8 @@ public partial class MainWindow
         }
     }
 
-    private string? AskPresetName()
+    private string? AskPresetName(
+        string initialName = "")
     {
         var panel = new StackPanel
         {
@@ -357,13 +480,15 @@ public partial class MainWindow
 
         panel.Children.Add(new TextBlock
         {
-            Text = "プリセット名（1～80文字・同名は新規登録できません）",
+            Text =
+                "プリセット名（1～80文字・同名は新規登録できません）",
             Margin = new Thickness(0, 0, 0, 12),
             TextWrapping = TextWrapping.Wrap
         });
 
         var nameBox = new TextBox
         {
+            Text = initialName,
             MaxLength = 80,
             MinHeight = 30
         };
@@ -403,21 +528,45 @@ public partial class MainWindow
             Width = 460,
             SizeToContent = SizeToContent.Height,
             ResizeMode = ResizeMode.NoResize,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            WindowStartupLocation =
+                WindowStartupLocation.CenterOwner,
             Content = panel,
             ShowInTaskbar = false
         };
 
         save.Click += (_, _) =>
         {
-            if (string.IsNullOrWhiteSpace(nameBox.Text))
+            string enteredName = nameBox.Text.Trim();
+
+            // 入力不備は例外にせず、その場で通知する。
+            if (enteredName.Length == 0)
             {
                 MessageBox.Show(
                     dialog,
-                    "プリセット名を入力してください。",
-                    "名前の確認");
+                    "プリセット名を入力してください。\n" +
+                    "空白だけの名前は使用できません。",
+                    "名前の確認",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
 
                 nameBox.Focus();
+                nameBox.SelectAll();
+
+                return;
+            }
+
+            if (enteredName.Length > 80)
+            {
+                MessageBox.Show(
+                    dialog,
+                    "プリセット名は80文字以内にしてください。",
+                    "名前の確認",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+
+                nameBox.Focus();
+                nameBox.SelectAll();
+
                 return;
             }
 
@@ -427,6 +576,11 @@ public partial class MainWindow
         dialog.Loaded += (_, _) =>
         {
             Keyboard.Focus(nameBox);
+
+            if (nameBox.Text.Length > 0)
+            {
+                nameBox.SelectAll();
+            }
         };
 
         return dialog.ShowDialog() == true
