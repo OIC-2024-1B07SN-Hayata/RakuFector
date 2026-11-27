@@ -72,6 +72,9 @@ public partial class TunerPage : UserControl, IDisposable
         _polyEnabled = PolyTunerToggle.IsChecked == true;
         PolyTunerToggle.Content = _polyEnabled ? "ON" : "OFF";
 
+        // 六弦解析のON・OFFに応じてグレーアウトを切り替える
+        SixStringPanel.Opacity = _polyEnabled ? 1.0 : 0.3;
+
         if (!_polyEnabled)
         {
             foreach (var row in _stringMeters)
