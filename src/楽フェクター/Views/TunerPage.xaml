@@ -159,10 +159,13 @@
                                     </ToggleButton.Template>
                                 </ToggleButton>
                             </DockPanel>
-                            <TextBlock Text="開放弦 / E A D G B E" FontSize="11"
-                                       Foreground="#8FA7B7" Margin="0,3,0,12"/>
 
-                            <!-- 各行はViewModelで動的更新 -->
+                            <StackPanel x:Name="SixStringPanel" Opacity="0.3">
+
+                                <TextBlock Text="開放弦 / E A D G B E" FontSize="11"
+                                           Foreground="#8FA7B7" Margin="0,3,0,12"/>
+
+                                <!-- 各行はViewModelで動的更新 -->
                             <ItemsControl x:Name="StringMeterList">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -212,9 +215,12 @@
                             </Grid>
                             <TextBlock Text="緑：±5 cent以内 / 青：調整が必要"
                                        FontSize="10" Foreground="#8299AB" TextWrapping="Wrap"/>
-                            <TextBlock Text="※検出できない弦は『未検出』と表示"
-                                       FontSize="10" Foreground="#8299AB" TextWrapping="Wrap"
-                                       Margin="0,3,0,0"/>
+                                <TextBlock Text="※検出できない弦は『未検出』と表示"
+                                FontSize="10" Foreground="#8299AB" TextWrapping="Wrap"
+                                Margin="0,3,0,0"/>
+
+                            </StackPanel> <!-- 六弦表示グループの終了 -->
+
                         </StackPanel>
                     </ScrollViewer>
                 </Border>
