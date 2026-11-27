@@ -13,18 +13,20 @@ using FXForge.Models;
 
 namespace FXForge.Views;
 
-public partial class TonePage :
-    UserControl,
-    INotifyPropertyChanged
+public partial class TonePage : UserControl, INotifyPropertyChanged
 {
     private readonly ToneAudioEngine _engine = new();
     private readonly HashSet<EffectParameter> _watched = new();
 
     private EffectItem? _selectedEffect;
     private bool _applyingPreset;
-    private Point _dragStart;
-    private long _delayRevision;
 
+    // カードのドラッグ操作用
+    private Point _dragStart;
+    private Button? _pressedEffectCard;
+    private bool _effectDragRunning;
+
+    private long _delayRevision;
     private Dictionary<string, double>? _delayModeValues;
 
     private double _delayManualTimeMs = 400;
@@ -45,7 +47,9 @@ public partial class TonePage :
         set
         {
             if (value)
+            {
                 SetDelayTimeMode(false);
+            }
         }
     }
 
@@ -55,20 +59,20 @@ public partial class TonePage :
         set
         {
             if (value)
+            {
                 SetDelayTimeMode(true);
+            }
         }
     }
 
-    public string DelayTimingStatus =>
-        _delayTimingStatus;
+    public string DelayTimingStatus => _delayTimingStatus;
 
     public Brush DelayTimingStatusBrush =>
         _delayTimingValid
             ? Brushes.LightSteelBlue
             : Brushes.Salmon;
 
-    public ObservableCollection<EffectItem> Effects { get; } =
-        new();
+    public ObservableCollection<EffectItem> Effects { get; } = new();
 
     public EffectItem? SelectedEffect
     {
@@ -76,7 +80,9 @@ public partial class TonePage :
         set
         {
             if (_selectedEffect == value)
+            {
                 return;
+            }
 
             _selectedEffect = value;
             OnPropertyChanged();
@@ -84,11 +90,13 @@ public partial class TonePage :
     }
 
     public event Action? DisplaySettingsChanged;
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public TonePage()
     {
         InitializeComponent();
+
         BuildEffects();
 
         SelectedEffect = Effects.FirstOrDefault(
@@ -97,7 +105,9 @@ public partial class TonePage :
         DataContext = this;
 
         foreach (var effect in Effects)
+        {
             effect.PropertyChanged += EffectChanged;
+        }
 
         Effects.CollectionChanged += (_, _) =>
         {
@@ -112,7 +122,9 @@ public partial class TonePage :
     private void SetDelayTimeMode(bool tempo)
     {
         if (_delayTempoMode == tempo)
+        {
             return;
+        }
 
         _delayTempoMode = tempo;
 
@@ -168,22 +180,28 @@ public partial class TonePage :
                 "SD-1 Style / Prototype",
                 "#E9B21C",
                 new ParameterDefinition(
-                    "Drive", defaults.A.Drive * 100),
+                    "Drive",
+                    defaults.A.Drive * 100),
                 new ParameterDefinition(
-                    "Tone", defaults.A.Tone * 100),
+                    "Tone",
+                    defaults.A.Tone * 100),
                 new ParameterDefinition(
-                    "Level", defaults.A.Level * 100)),
+                    "Level",
+                    defaults.A.Level * 100)),
 
             new EffectPresetDefinition(
                 "RAT",
                 "RAT Style / Prototype",
                 "#C85A7A",
                 new ParameterDefinition(
-                    "Distortion", defaults.B.Drive * 100),
+                    "Distortion",
+                    defaults.B.Drive * 100),
                 new ParameterDefinition(
-                    "Filter", defaults.B.Tone * 100),
+                    "Filter",
+                    defaults.B.Tone * 100),
                 new ParameterDefinition(
-                    "Volume", defaults.B.Level * 100)),
+                    "Volume",
+                    defaults.B.Level * 100)),
 
             new EffectPresetDefinition(
                 "TS9",
@@ -211,10 +229,14 @@ public partial class TonePage :
         };
 
         var driveA = CreateDriveSlot(
-            "DRIVE A", presets, 0);
+            "DRIVE A",
+            presets,
+            0);
 
         var driveB = CreateDriveSlot(
-            "DRIVE B", presets, 1);
+            "DRIVE B",
+            presets,
+            1);
 
         driveA.IsEnabled = false;
         driveB.IsEnabled = false;
@@ -229,17 +251,23 @@ public partial class TonePage :
 
         amp.SetFixedParameters(
             new EffectParameter(
-                "Gain", defaults.Amp.Gain * 100),
+                "Gain",
+                defaults.Amp.Gain * 100),
             new EffectParameter(
-                "Bass", defaults.Amp.Bass * 100),
+                "Bass",
+                defaults.Amp.Bass * 100),
             new EffectParameter(
-                "Middle", defaults.Amp.Middle * 100),
+                "Middle",
+                defaults.Amp.Middle * 100),
             new EffectParameter(
-                "Treble", defaults.Amp.Treble * 100),
+                "Treble",
+                defaults.Amp.Treble * 100),
             new EffectParameter(
-                "High", defaults.Amp.High * 100),
+                "High",
+                defaults.Amp.High * 100),
             new EffectParameter(
-                "Level", defaults.Amp.Level * 100));
+                "Level",
+                defaults.Amp.Level * 100));
 
         var output = new EffectItem(
             "OUTPUT",
@@ -251,7 +279,8 @@ public partial class TonePage :
 
         output.SetFixedParameters(
             new EffectParameter(
-                "Level", defaults.OutputLevel * 100));
+                "Level",
+                defaults.OutputLevel * 100));
 
         var delay = new EffectItem(
             "DELAY",
@@ -269,21 +298,42 @@ public partial class TonePage :
                     mode + " Delay",
                     "#AD85ED",
                     new ParameterDefinition(
-                        "Time", 400, 20, 2000, " ms"),
+                        "Time",
+                        400,
+                        20,
+                        2000,
+                        " ms"),
                     new ParameterDefinition(
-                        "BPM", 120, 30, 300),
+                        "BPM",
+                        120,
+                        30,
+                        300),
                     new ParameterDefinition(
-                        "Note", 3, 0, 5),
+                        "Note",
+                        3,
+                        0,
+                        5),
                     new ParameterDefinition(
-                        "Feedback", 35, 0, 95, "%"),
+                        "Feedback",
+                        35,
+                        0,
+                        95,
+                        "%"),
                     new ParameterDefinition(
-                        "Mix", 25, 0, 100, "%"),
+                        "Mix",
+                        25,
+                        0,
+                        100,
+                        "%"),
                     new ParameterDefinition(
-                        "Level", 100, 0, 100, "%")));
+                        "Level",
+                        100,
+                        0,
+                        100,
+                        "%")));
         }
 
-        delay.SelectedPreset =
-            delay.AvailablePresets[0];
+        delay.SelectedPreset = delay.AvailablePresets[0];
 
         ConfigureDelayKnobs(delay);
 
@@ -310,7 +360,9 @@ public partial class TonePage :
             true);
 
         foreach (var preset in presets)
+        {
             effect.AvailablePresets.Add(preset);
+        }
 
         effect.SelectedPreset =
             effect.AvailablePresets[selectedIndex];
@@ -324,14 +376,12 @@ public partial class TonePage :
     {
         if (sender is EffectItem { SlotName: "DELAY" } delay)
         {
-            if (e.PropertyName ==
-                    nameof(EffectItem.SelectedPreset) &&
+            if (e.PropertyName == nameof(EffectItem.SelectedPreset) &&
                 delay.Parameters.Count == 6)
             {
-                _delayModeValues =
-                    delay.Parameters.ToDictionary(
-                        parameter => parameter.Name,
-                        parameter => parameter.Value);
+                _delayModeValues = delay.Parameters.ToDictionary(
+                    parameter => parameter.Name,
+                    parameter => parameter.Value);
             }
 
             if (e.PropertyName == "ParametersChanged")
@@ -343,8 +393,7 @@ public partial class TonePage :
                     foreach (var value in values)
                     {
                         delay.Parameters.Single(
-                            parameter =>
-                                parameter.Name == value.Key)
+                            parameter => parameter.Name == value.Key)
                             .Value = value.Value;
                     }
                 }
@@ -358,8 +407,7 @@ public partial class TonePage :
             ObserveParameters();
             SynchronizeAudioSettings();
         }
-        else if (e.PropertyName ==
-                 nameof(EffectItem.IsEnabled))
+        else if (e.PropertyName == nameof(EffectItem.IsEnabled))
         {
             SynchronizeAudioSettings();
         }
@@ -372,9 +420,7 @@ public partial class TonePage :
             .ToHashSet();
 
         foreach (var old in _watched
-                     .Where(
-                         parameter =>
-                             !current.Contains(parameter))
+                     .Where(parameter => !current.Contains(parameter))
                      .ToArray())
         {
             old.PropertyChanged -= ParameterChanged;
@@ -384,7 +430,9 @@ public partial class TonePage :
         foreach (var parameter in current)
         {
             if (_watched.Add(parameter))
+            {
                 parameter.PropertyChanged += ParameterChanged;
+            }
         }
     }
 
@@ -393,10 +441,11 @@ public partial class TonePage :
         PropertyChangedEventArgs e)
     {
         if (_updatingDelayControls || _applyingPreset)
+        {
             return;
+        }
 
-        if (e.PropertyName ==
-            nameof(EffectParameter.Value))
+        if (e.PropertyName == nameof(EffectParameter.Value))
         {
             SynchronizeAudioSettings();
         }
@@ -408,15 +457,13 @@ public partial class TonePage :
     {
         double value = effect.Parameters
             .FirstOrDefault(
-                parameter =>
-                    parameter.Name == parameterName)
+                parameter => parameter.Name == parameterName)
             ?.Value ?? 50;
 
         return DriveStage.Unit(value / 100.0);
     }
 
-    private static DriveSettings ReadDrive(
-        EffectItem effect)
+    private static DriveSettings ReadDrive(EffectItem effect)
     {
         var mapping = effect.ShortName switch
         {
@@ -465,7 +512,9 @@ public partial class TonePage :
     private void SynchronizeAudioSettings()
     {
         if (_applyingPreset)
+        {
             return;
+        }
 
         var a = Effects.First(
             effect => effect.SlotName == "DRIVE A");
@@ -511,8 +560,7 @@ public partial class TonePage :
         DisplaySettingsChanged?.Invoke();
     }
 
-    private static void ConfigureDelayKnobs(
-        EffectItem effect)
+    private static void ConfigureDelayKnobs(EffectItem effect)
     {
         effect.Parameters.Single(
             parameter => parameter.Name == "BPM")
@@ -523,14 +571,12 @@ public partial class TonePage :
             .SetDiscreteValues(
                 1,
                 Enum.GetValues<DelayNote>()
-                    .Where(
-                        note => note != DelayNote.Manual)
+                    .Where(note => note != DelayNote.Manual)
                     .Select(DelaySettings.NoteLabel)
                     .ToArray());
     }
 
-    private DelaySettings ReadDelay(
-        EffectItem effect)
+    private DelaySettings ReadDelay(EffectItem effect)
     {
         var time = effect.Parameters.Single(
             parameter => parameter.Name == "Time");
@@ -553,22 +599,20 @@ public partial class TonePage :
             if (note == DelayNote.Manual)
             {
                 if (_delaySelectedNote != DelayNote.Manual)
+                {
                     time.Value = _delayManualTimeMs;
+                }
 
                 _delayManualTimeMs = time.Value;
             }
 
             _delaySelectedNote = note;
 
-            time.IsEditable =
-                note == DelayNote.Manual;
+            time.IsEditable = note == DelayNote.Manual;
 
-            double requested =
-                note == DelayNote.Manual
-                    ? _delayManualTimeMs
-                    : DelaySettings.CalculateTime(
-                        bpm,
-                        note);
+            double requested = note == DelayNote.Manual
+                ? _delayManualTimeMs
+                : DelaySettings.CalculateTime(bpm, note);
 
             _delayTimingValid =
                 requested >= DelaySettings.MinimumTimeMs &&
@@ -576,62 +620,52 @@ public partial class TonePage :
 
             if (_delayTimingValid)
             {
-                _lastValidDelayTiming =
-                    new DelaySettings(
-                        false,
-                        DelayMode.Digital,
-                        _delayManualTimeMs,
-                        .35,
-                        .25)
-                    {
-                        TempoBpm = bpm,
-                        Note = note
-                    };
+                _lastValidDelayTiming = new DelaySettings(
+                    false,
+                    DelayMode.Digital,
+                    _delayManualTimeMs,
+                    .35,
+                    .25)
+                {
+                    TempoBpm = bpm,
+                    Note = note
+                };
 
                 time.Value = requested;
 
-                _delayTimingStatus =
-                    note == DelayNote.Manual
-                        ? $"TIME：{requested:0.##}ms"
-                        : $"BPM {bpm} × {DelaySettings.NoteLabel(note)} ＝ {requested:0.##}ms";
+                _delayTimingStatus = note == DelayNote.Manual
+                    ? $"TIME：{requested:0.##}ms"
+                    : $"BPM {bpm} × {DelaySettings.NoteLabel(note)} ＝ {requested:0.##}ms";
             }
             else
             {
                 time.Value =
-                    _lastValidDelayTiming
-                        .EffectiveTimeMilliseconds;
+                    _lastValidDelayTiming.EffectiveTimeMilliseconds;
 
                 _delayTimingStatus =
                     $"BPM {bpm} × {DelaySettings.NoteLabel(note)} ＝ {requested:0.##}ms：最大2000msを超えるため未適用。" +
                     $"現在は{time.Value:0.##}msを維持しています。BPMまたはNoteを変更してください（保存不可）。";
             }
 
-            OnPropertyChanged(
-                nameof(DelayTimingStatus));
-
-            OnPropertyChanged(
-                nameof(DelayTimingStatusBrush));
+            OnPropertyChanged(nameof(DelayTimingStatus));
+            OnPropertyChanged(nameof(DelayTimingStatusBrush));
 
             return _lastValidDelayTiming with
             {
                 Enabled = effect.IsEnabled,
 
-                Mode = Enum.Parse<DelayMode>(
-                    effect.ShortName),
+                Mode = Enum.Parse<DelayMode>(effect.ShortName),
 
                 Feedback = effect.Parameters.Single(
-                    parameter =>
-                        parameter.Name == "Feedback")
+                    parameter => parameter.Name == "Feedback")
                     .Value / 100,
 
                 Mix = effect.Parameters.Single(
-                    parameter =>
-                        parameter.Name == "Mix")
+                    parameter => parameter.Name == "Mix")
                     .Value / 100,
 
                 WetLevel = effect.Parameters.Single(
-                    parameter =>
-                        parameter.Name == "Level")
+                    parameter => parameter.Name == "Level")
                     .Value / 100
             };
         }
@@ -673,7 +707,9 @@ public partial class TonePage :
         };
 
         if (mode is null)
+        {
             return false;
+        }
 
         ApplyQuickPreset(mode);
 
@@ -692,8 +728,7 @@ public partial class TonePage :
         foreach (var parameter in effect.Parameters)
         {
             parameter.Value = preset.Parameters
-                .First(
-                    item => item.Name == parameter.Name)
+                .First(item => item.Name == parameter.Name)
                 .DefaultValue;
         }
     }
@@ -725,15 +760,9 @@ public partial class TonePage :
 
             _delayRevision++;
 
-            a.IsEnabled =
-                mode is "Sd1" or "Stack";
-
-            b.IsEnabled =
-                mode is "Rat" or "Stack";
-
-            amp.IsEnabled =
-                mode != "Raw";
-
+            a.IsEnabled = mode is "Sd1" or "Stack";
+            b.IsEnabled = mode is "Rat" or "Stack";
+            amp.IsEnabled = mode != "Raw";
             output.IsEnabled = true;
 
             var defaults = ToneSettings.Default;
@@ -793,7 +822,8 @@ public partial class TonePage :
             "AMPのTrebleは3.2kHzを基準に高域を調整します。\n" +
             "AMPのHighは6kHz付近の高域を調整します。\n" +
             "どちらも50が補正なしの位置です。\n\n" +
-            "DRIVE A/Bはドラッグで順序を交換できます。\n" +
+            "DRIVE A/Bはカードを押したまま、もう一方のカードへドラッグすると順序を交換できます。\n" +
+            "矢印は表示のみです。\n" +
             "種類を変更するとノブは初期値に戻ります。\n" +
             "OUTPUTのLevelは全体の音量です。\n\n" +
             "音色の保存・読込は画面上部から操作できます。",
@@ -811,41 +841,171 @@ public partial class TonePage :
         }
     }
 
+    // =========================================================
+    // カードのドラッグ＆ドロップ
+    // =========================================================
+
     private void Effect_MouseDown(
         object sender,
         MouseButtonEventArgs e)
     {
+        ClearEffectPress();
+
+        if (sender is not Button
+            {
+                Tag: EffectItem effect
+            } button)
+        {
+            return;
+        }
+
+        if (effect.IsEditable)
+        {
+            SelectedEffect = effect;
+        }
+
+        if (!effect.CanMove)
+        {
+            return;
+        }
+
         _dragStart = e.GetPosition(this);
+        _pressedEffectCard = button;
+
+        // Button標準の押下処理より先に扱い、
+        // カード全体でドラッグ待機する。
+        e.Handled = true;
+
+        if (!button.CaptureMouse())
+        {
+            _pressedEffectCard = null;
+        }
     }
 
     private void Effect_MouseMove(
         object sender,
         MouseEventArgs e)
     {
-        if (e.LeftButton != MouseButtonState.Pressed ||
-            sender is not Button
+        if (_effectDragRunning ||
+            _pressedEffectCard is not Button button ||
+            !ReferenceEquals(sender, button))
+        {
+            return;
+        }
+
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            ClearEffectPress();
+            return;
+        }
+
+        if (button.Tag is not EffectItem
             {
-                Tag: EffectItem { CanMove: true } effect
-            })
+                CanMove: true
+            } effect ||
+            Effects.IndexOf(effect) < 0)
+        {
+            ClearEffectPress();
+            return;
+        }
+
+        Point position = e.GetPosition(this);
+
+        double horizontalDistance =
+            Math.Abs(position.X - _dragStart.X);
+
+        double verticalDistance =
+            Math.Abs(position.Y - _dragStart.Y);
+
+        if (horizontalDistance <
+                SystemParameters.MinimumHorizontalDragDistance &&
+            verticalDistance <
+                SystemParameters.MinimumVerticalDragDistance)
         {
             return;
         }
 
-        var position = e.GetPosition(this);
+        // 通常のマウスキャプチャを解除して、
+        // WPFのドラッグ処理へ制御を渡す。
+        ClearEffectPress();
 
-        if (Math.Abs(position.X - _dragStart.X)
-                < SystemParameters.MinimumHorizontalDragDistance &&
-            Math.Abs(position.Y - _dragStart.Y)
-                < SystemParameters.MinimumVerticalDragDistance)
+        var data = new DataObject(
+            typeof(EffectItem),
+            effect);
+
+        _effectDragRunning = true;
+        e.Handled = true;
+
+        try
+        {
+            DragDrop.DoDragDrop(
+                button,
+                data,
+                DragDropEffects.Move);
+        }
+        finally
+        {
+            _effectDragRunning = false;
+            ClearEffectPress();
+        }
+    }
+
+    private void Effect_MouseUp(
+        object sender,
+        MouseButtonEventArgs e)
+    {
+        if (_pressedEffectCard is null ||
+            !ReferenceEquals(sender, _pressedEffectCard))
         {
             return;
         }
 
-        DragDrop.DoDragDrop(
-            (Button)sender,
-            effect,
-            DragDropEffects.Move);
+        // ドラッグ開始距離に達しなかった場合は、
+        // MouseDownで行った選択だけで終了する。
+        ClearEffectPress();
 
+        e.Handled = true;
+    }
+
+    private void Effect_LostMouseCapture(
+        object sender,
+        MouseEventArgs e)
+    {
+        if (ReferenceEquals(sender, _pressedEffectCard))
+        {
+            _pressedEffectCard = null;
+        }
+    }
+
+    private void ClearEffectPress()
+    {
+        Button? button = _pressedEffectCard;
+
+        _pressedEffectCard = null;
+
+        if (button?.IsMouseCaptured == true)
+        {
+            button.ReleaseMouseCapture();
+        }
+    }
+
+    private void Effect_DragOver(
+        object sender,
+        DragEventArgs e)
+    {
+        bool canMove =
+            (e.AllowedEffects & DragDropEffects.Move) != 0 &&
+            TryGetEffectDrop(
+                sender,
+                e,
+                out _,
+                out _);
+
+        e.Effects = canMove
+            ? DragDropEffects.Move
+            : DragDropEffects.None;
+
+        // カード側で判定を確定する。
         e.Handled = true;
     }
 
@@ -853,13 +1013,17 @@ public partial class TonePage :
         object sender,
         DragEventArgs e)
     {
-        if (sender is not Button
-            {
-                Tag: EffectItem { CanMove: true } target
-            } ||
-            e.Data.GetData(typeof(EffectItem))
-                is not EffectItem { CanMove: true } source ||
-            ReferenceEquals(source, target))
+        e.Effects = DragDropEffects.None;
+        e.Handled = true;
+
+        if ((e.AllowedEffects & DragDropEffects.Move) == 0 ||
+            !TryGetEffectDrop(
+                sender,
+                e,
+                out EffectItem? source,
+                out EffectItem? target) ||
+            source is null ||
+            target is null)
         {
             return;
         }
@@ -867,13 +1031,71 @@ public partial class TonePage :
         int from = Effects.IndexOf(source);
         int to = Effects.IndexOf(target);
 
-        if (from < 0 || to < 0)
+        if (from < 0 || to < 0 || from == to)
+        {
             return;
+        }
 
+        // CollectionChanged経由でDSPの順序も更新される。
         Effects.Move(from, to);
+
         SelectedEffect = source;
 
-        e.Handled = true;
+        e.Effects = DragDropEffects.Move;
+    }
+
+    private bool TryGetEffectDrop(
+        object sender,
+        DragEventArgs e,
+        out EffectItem? source,
+        out EffectItem? target)
+    {
+        source = null;
+        target = null;
+
+        if (!_effectDragRunning ||
+            sender is not Button
+            {
+                Tag: EffectItem
+                {
+                    CanMove: true
+                } targetEffect
+            } ||
+            !e.Data.GetDataPresent(typeof(EffectItem)) ||
+            e.Data.GetData(typeof(EffectItem))
+                is not EffectItem
+                {
+                    CanMove: true
+                } sourceEffect ||
+            ReferenceEquals(sourceEffect, targetEffect))
+        {
+            return false;
+        }
+
+        int from = Effects.IndexOf(sourceEffect);
+        int to = Effects.IndexOf(targetEffect);
+
+        if (from < 0 || to < 0)
+        {
+            return false;
+        }
+
+        // 固定カードをまたぐ移動は受け付けない。
+        int first = Math.Min(from, to);
+        int last = Math.Max(from, to);
+
+        for (int index = first; index <= last; index++)
+        {
+            if (!Effects[index].CanMove)
+            {
+                return false;
+            }
+        }
+
+        source = sourceEffect;
+        target = targetEffect;
+
+        return true;
     }
 
     protected virtual void OnPropertyChanged(
