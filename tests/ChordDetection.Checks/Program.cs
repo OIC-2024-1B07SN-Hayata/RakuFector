@@ -1,5 +1,6 @@
 using ChordDetection.Core.Chords;
 using ChordDetection.Core.Music;
+using ChordDetection.Core.Models;
 
 int passed = 0;
 void Check(bool condition, string label) { if (!condition) throw new Exception("FAIL " + label); passed++; Console.WriteLine("PASS " + label); }
@@ -89,6 +90,82 @@ Check(Degrees(keyC, tonic, C, G) == "Ⅰ Ⅴ", "minor base does not change a maj
 Check(Degrees(new MusicKey(2, false), relative, Chord(2), Chord(11, "m"), Chord(7), Chord(9)) == "Ⅰ Ⅵm Ⅳ Ⅴ",
     "transposed progression keeps its degrees");
 Check(DegreeNamer.Degree(noChord, keyC) == ChordResult.NoChordName, "N.C. stays N.C.");
+
+// ---------- Scale / Fretboard ----------
+bool SameSet(IReadOnlySet<int> set, params int[] expected) => set.SetEquals(expected);
+Check(SameSet(Scale.PitchClassesOf(keyC, ScaleType.Major), 0, 2, 4, 5, 7, 9, 11), "C major scale");
+Check(SameSet(Scale.PitchClassesOf(keyAm, ScaleType.NaturalMinor), 0, 2, 4, 5, 7, 9, 11)
+    && Scale.RootFor(keyAm, ScaleType.NaturalMinor) == 9, "A natural minor: same notes, root A");
+Check(Scale.RootFor(keyC, ScaleType.MinorPentatonic) == 9
+    && SameSet(Scale.PitchClassesOf(keyC, ScaleType.MinorPentatonic), 9, 0, 2, 4, 7), "key C, minor pentatonic → A minor pentatonic");
+Check(Scale.RootFor(keyAm, ScaleType.MajorPentatonic) == 0, "key Am, major pentatonic → C major pentatonic");
+Check(Scale.PitchClassesOf(keyAm, ScaleType.Blues).Contains(3) && Scale.PitchClassesOf(keyAm, ScaleType.Blues).Count == 6, "blues has the ♭5");
+Check(Scale.DefaultFor(keyC) == ScaleType.Major && Scale.DefaultFor(keyAm) == ScaleType.NaturalMinor, "default scale follows the key");
+Check(Scale.IntervalName(3) == "♭3" && Scale.IntervalName(7) == "5" && Scale.IntervalName(12) == "R", "interval names");
+
+Check(Fretboard.PitchClassAt(5, 0) == 4 && Fretboard.PitchClassAt(5, 5) == 9 && Fretboard.PitchClassAt(0, 12) == 4, "fretboard pitch classes");
+
+var amScale = Scale.PitchClassesOf(keyAm, ScaleType.NaturalMinor);
+var plain = Fretboard.Marks(amScale, 9, null);
+Check(plain.All(m => m.Kind is FretMarkKind.ScaleNote or FretMarkKind.ScaleRoot), "no chord → scale dots only");
+Check(plain.Single(m => m.StringIndex == 5 && m.Fret == 5).Kind == FretMarkKind.ScaleRoot, "6th string 5th fret is the root A");
+Check(plain.Any(m => m.StringIndex == 5 && m.Fret == 1), "F on 6th string 1st fret is in Am");
+Check(!plain.Any(m => m.StringIndex == 5 && m.Fret == 2), "F# is not in Am");
+Check(Fretboard.Marks(amScale, 9, noChord).SequenceEqual(plain), "N.C. → no chord dots");
+Check(Fretboard.Marks(amScale, 9, null, capo: 3).All(m => m.Fret >= 3), "no dots below the capo");
+
+var withE7 = Fretboard.Marks(amScale, 9, E7);
+Check(withE7.Where(m => m.PitchClass == 8).All(m => m.Kind == FretMarkKind.ChordToneOutsideScale)
+    && withE7.Any(m => m.PitchClass == 8), "G# of E7 is outside Am");
+Check(withE7.Where(m => m.PitchClass == 4).All(m => m.Kind == FretMarkKind.ChordRoot), "E is the chord root");
+Check(withE7.Where(m => m.PitchClass == 2).All(m => m.Kind == FretMarkKind.ChordTone), "D (♭7 of E7) is a chord tone in the scale");
+Check(withE7.Where(m => m.PitchClass == 9).All(m => m.Kind == FretMarkKind.ScaleRoot), "A stays the scale root");
+
+// ---------- Chord forms ----------
+// Every root × every chord type has a form, and every form is playable and sounds the chord.
+var formProblems = new List<string>();
+foreach (var type in catalog.Types)
+{
+    for (int root = 0; root < 12; root++)
+    {
+        var chord = new ChordResult(root, type, null, 1);
+        var forms = ChordForms.For(chord);
+        if (forms.Count == 0) { formProblems.Add($"{chord.Name}: no form"); continue; }
+        var tones = Fretboard.ChordTones(chord);
+        foreach (var form in forms)
+        {
+            var played = Enumerable.Range(0, 6).Where(s => form.FretOn(s) is not null)
+                .Select(s => Fretboard.StandardTuning[s] + form.FretOn(s)!.Value).ToList();
+            var fretted = form.Frets.Where(f => f > 0).Select(f => f!.Value).ToList();
+            if (!played.All(p => tones.Contains(PitchClasses.Of(p)))) formProblems.Add($"{chord.Name} {form}: note outside the chord");
+            if (!played.Any(p => PitchClasses.Of(p) == root)) formProblems.Add($"{chord.Name} {form}: no root");
+            if (PitchClasses.Of(played.Min()) != root) formProblems.Add($"{chord.Name} {form}: bass is not the root");
+            if (fretted.Count > 0 && fretted.Max() - fretted.Min() > 3) formProblems.Add($"{chord.Name} {form}: too wide");
+            if (form.MaxFret > Fretboard.DefaultFretCount) formProblems.Add($"{chord.Name} {form}: above fret 15");
+        }
+    }
+}
+Check(formProblems.Count == 0, "every chord has playable forms: " + string.Join("; ", formProblems.Take(5)));
+var Asus4 = Chord(9, "sus4");
+Check(ChordForms.For(Asus4)[0].Text == "x02230" && ChordForms.For(C)[0].Text == "x32010", "open forms come first");
+Check(ChordForms.For(F).Any(f => f.Text == "133211") && ChordForms.For(F)[0].Text == "133211", "F: barre form");
+Check(ChordForms.For(Chord(11, "m"))[0].Text == "x24432", "Bm: A-form barre first");
+Check(ChordForms.For(new ChordResult(0, catalog[""], 4, 1))[0].Text == "x32010", "slash bass ignored");
+Check(ChordForms.For(noChord).Count == 0, "N.C. has no form");
+Check(ChordForm.Parse("x-12-14-14-13-x").Text == "x-12-14-14-13-x" && ChordForm.Parse("x02230").FretOn(5) is null
+    && ChordForm.Parse("x02230").FretOn(1) == 3, "form text and string order");
+
+var asus4Marks = Fretboard.ChordFormMarks(ChordForm.Parse("x02230"), Asus4);
+Check(asus4Marks.Single(m => m.StringIndex == 4 && m.Fret == 0).Kind == FretMarkKind.FormRoot, "Asus4: open 5th string is the root");
+Check(!asus4Marks.Any(m => m.StringIndex == 5 && (m.Kind is FretMarkKind.FormRoot or FretMarkKind.FormTone || m.Fret == 0)), "Asus4: 6th string muted, nothing on its open string");
+Check(asus4Marks.Single(m => m.StringIndex == 0 && m.Fret == 0).Kind == FretMarkKind.FormTone, "Asus4: open 1st string E is fretted in the form");
+Check(asus4Marks.Single(m => m.StringIndex == 2 && m.Fret == 2).Kind == FretMarkKind.FormRoot
+    && asus4Marks.Single(m => m.StringIndex == 5 && m.Fret == 5).Kind == FretMarkKind.OtherRoot, "Asus4: A on the 6th string 5th fret is another root");
+Check(asus4Marks.Count(m => m.Kind is FretMarkKind.FormRoot or FretMarkKind.FormTone) == 5, "Asus4: five fretted notes");
+var capoMarks = Fretboard.ChordFormMarks(ChordForm.Parse("x02230"), Chord(11, "sus4"), capo: 2);
+Check(capoMarks.Where(m => m.Kind is FretMarkKind.FormRoot or FretMarkKind.FormTone).Select(m => (m.StringIndex, m.Fret)).Order()
+    .SequenceEqual(new[] { (0, 2), (1, 5), (2, 4), (3, 4), (4, 2) }.Order()), "capo 2 moves the form up 2 frets");
+Check(capoMarks.All(m => m.Fret >= 2), "no dots below the capo (chord form)");
 
 Console.WriteLine($"{passed} checks passed");
 

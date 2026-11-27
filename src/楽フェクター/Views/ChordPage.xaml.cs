@@ -100,6 +100,94 @@ public partial class ChordPage : UserControl, IDisposable
     private static string? DroppedFile(DragEventArgs e) =>
         e.Data.GetData(DataFormats.FileDrop) is string[] { Length: 1 } files ? files[0] : null;
 
+    // Dragging the fretboard panel's top edge. The panel is fixed at the bottom of the right column, so a taller
+    // neck moves its top edge up. Measured against the page (which does not move) rather than the grip, because the
+    // grip itself moves as the panel grows or the timeline closes.
+    private double _resizeStartY;
+    private double _resizeStartHeight;
+    /// <summary>Smallest height the timeline card can shrink to (kept while it is hidden).</summary>
+    private double _timelineSpace;
+
+    /// <summary>Smallest timeline: the ruler (44) and one row of chords (64 + margins).</summary>
+    private const double MinTimelineGridHeight = 120;
+
+    /// <summary>Below this height the timeline is shown compact (no detected-notes row, smaller chord text).</summary>
+    private const double CompactTimelineBelow = 250;
+
+    private void OnTimelineGridSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (_viewModel is { } vm) vm.IsTimelineCompact = e.NewSize.Height < CompactTimelineBelow;
+    }
+
+    private void OnFretboardResizeStarted(object sender, DragStartedEventArgs e)
+    {
+        _resizeStartY = Mouse.GetPosition(this).Y;
+        _resizeStartHeight = _viewModel?.FretboardHeight ?? 0;
+    }
+
+    private void OnFretboardResizeDrag(object sender, DragDeltaEventArgs e)
+    {
+        if (_viewModel is not { } vm || FretboardLimits() is not var (maxWith, maxLarge)) return;
+        vm.ResizeFretboard(_resizeStartHeight + (_resizeStartY - Mouse.GetPosition(this).Y), maxWith, maxLarge);
+    }
+
+    /// <summary>Window resized or panel opened / resized: shrink the neck if it no longer fits.</summary>
+    private void OnFretboardSpaceChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (_viewModel is { } vm && FretboardLimits() is var (maxWith, maxLarge)) vm.ClampFretboard(maxWith, maxLarge);
+    }
+
+    /// <summary>
+    /// Largest neck that fits below the timeline, and once the timeline is closed; null while the panel is not laid out.
+    /// Everything in the panel other than the neck (header, legend, margins) is measured as panel height − neck height.
+    /// </summary>
+    private (double MaxWithTimeline, double MaxLarge)? FretboardLimits()
+    {
+        if (_viewModel is not { } vm || FretboardCard.Visibility != Visibility.Visible || FretboardCard.ActualHeight <= 0) return null;
+        // The timeline can shrink to its smallest height (ruler + one row of chords); the rest of it can give way.
+        if (TimelineCard.Visibility == Visibility.Visible && TimelineCard.ActualHeight > 0)
+            _timelineSpace = TimelineCard.ActualHeight - TimelineGrid.ActualHeight + MinTimelineGridHeight;
+        double chrome = FretboardCard.ActualHeight - vm.FretboardHeight;
+        double sheetGap = BarSheetCard.Visibility == Visibility.Visible ? BarSheetCard.Margin.Top : 0;
+        const double panelGap = 16; // panel margin below the timeline / chord sheet
+        double column = AvailableColumnHeight();
+        return (column - _timelineSpace - sheetGap - panelGap - chrome, column - sheetGap - chrome);
+    }
+
+    /// <summary>
+    /// Height the window gives the right column. Not RightColumn.ActualHeight: when the content is taller than the
+    /// window, WPF lays an element out at its content's size (and clips it), so ActualHeight grows with the panel.
+    /// The page's layout slot is the space the window really offers.
+    /// </summary>
+    private double AvailableColumnHeight()
+    {
+        double top = RightColumn.TranslatePoint(new Point(0, 0), this).Y;
+        double bottomMargin = RightColumn.Parent is FrameworkElement { Margin: var m } ? m.Bottom : 0;
+        return LayoutInformation.GetLayoutSlot(this).Height - top - bottomMargin;
+    }
+
+    private double _slotHeight;
+
+    /// <summary>The window was resized: shrink the neck after the layout if it no longer fits (see <see cref="AvailableColumnHeight"/>).</summary>
+    protected override Size ArrangeOverride(Size arrangeBounds)
+    {
+        double slot = LayoutInformation.GetLayoutSlot(this).Height;
+        if (slot != _slotHeight)
+        {
+            _slotHeight = slot;
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+            {
+                if (_viewModel is { } vm && FretboardLimits() is var (maxWith, maxLarge)) vm.ClampFretboard(maxWith, maxLarge);
+            });
+        }
+        return base.ArrangeOverride(arrangeBounds);
+    }
+
+    private void OnFretboardResizeReset(object sender, MouseButtonEventArgs e)
+    {
+        _viewModel?.ShowTimelineCommand.Execute(null);
+    }
+
     private void OnChordClicked(object sender, MouseButtonEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: ChordRowViewModel row } && _viewModel is { } vm)

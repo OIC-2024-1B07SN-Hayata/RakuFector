@@ -24,4 +24,16 @@
     <SolidColorBrush x:Key="KeyBadgeBackground" Color="#123A4D" />
     <SolidColorBrush x:Key="KeyBadgeBorder" Color="#2E7FA6" />
     <SolidColorBrush x:Key="KeyBadgeLabel" Color="#A6DDF5" />
+    <!-- Scale fretboard -->
+    <SolidColorBrush x:Key="FretBoard" Color="#24201C" />
+    <SolidColorBrush x:Key="FretLine" Color="#5A5650" />
+    <SolidColorBrush x:Key="FretScaleNote" Color="#2B7BB0" />
+    <SolidColorBrush x:Key="FretScaleRoot" Color="#F08A24" />
+    <SolidColorBrush x:Key="FretOutsideTone" Color="#FF6F91" />
+    <SolidColorBrush x:Key="FretChip" Color="#1B3248" />
+    <SolidColorBrush x:Key="FretScaleNoteFill" Color="#1A2230" />
+    <SolidColorBrush x:Key="FretScaleNoteRing" Color="#9DB0C6" />
+    <SolidColorBrush x:Key="NowPlayingBackground" Color="#1C2E1F" />
+    <SolidColorBrush x:Key="NowPlayingBorder" Color="#3F6B3A" />
+    <SolidColorBrush x:Key="NowPlayingDot" Color="#7BD86A" />
 </ResourceDictionary>

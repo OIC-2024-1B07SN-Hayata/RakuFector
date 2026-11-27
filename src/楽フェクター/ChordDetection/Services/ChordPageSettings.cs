@@ -18,6 +18,18 @@ public sealed record ChordPageSettings
 
     public int LineDivision { get; init; } = 32;
 
+    /// <summary>"NoteName" (default) or "Interval": what the fretboard dots show.</summary>
+    public string? FretLabelMode { get; init; }
+
+    /// <summary>True when the fretboard panel (指板) was open.</summary>
+    public bool FretboardOpen { get; init; }
+
+    /// <summary>Tab of the fretboard panel: "ChordForm" or "Scale".</summary>
+    public string? FretboardTab { get; init; }
+
+    /// <summary>Height of the fretboard in the panel (changed by dragging the panel's top edge); 0 = default.</summary>
+    public double FretboardHeight { get; init; }
+
     // Written by earlier versions (コードの表示 with three choices, a check box for the minor base): read only.
     [JsonPropertyName("LabelMode"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LegacyLabelMode { get; init; }
