@@ -25,8 +25,12 @@ public partial class TonePage
     // 今後の対応機種は、この表へ追加します。
     private static readonly Dictionary<string, (string X, string Y)> XyMappings = new()
     {
+        // （横軸、縦軸）。左右どちらのDRIVEスロットでも共通です。
         ["RAT"] = ("Volume", "Distortion"),
-        ["SD-1"] = ("Level", "Drive")
+        ["SD-1"] = ("Level", "Drive"),
+        ["TS9"] = ("Level", "Drive"),
+        ["BD-2"] = ("Level", "Gain"),
+        ["DS-1"] = ("Level", "Distortion")
     };
 
     private void XyPage_Loaded(object sender, RoutedEventArgs e)
